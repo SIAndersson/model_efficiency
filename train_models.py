@@ -322,6 +322,11 @@ class BaseModel:
         if isinstance(y_pred, pd.Series):
             y_pred = y_pred.values
 
+        print(self.name)
+        print(X_test.shape)
+        print(y_test.shape)
+        print(y_pred.shape)
+
         mae = mean_absolute_error(y_test, y_pred)
         mse = mean_squared_error(y_test, y_pred)
         rmse = np.sqrt(mse)
