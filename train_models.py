@@ -297,11 +297,7 @@ class BaseModel:
                 gpus = GPUtil.getGPUs()
                 if gpus:
                     end_gpu_memory = gpus[0].memoryUsed  # MB
-                # Alternative way using PyTorch's tracker
-                peak_gpu_memory = torch.cuda.max_memory_allocated() / (
-                    1024 * 1024
-                )  # MB
-                self.gpu_memory_usage = peak_gpu_memory
+                self.gpu_memory_usage = end_gpu_memory - start_gpu_memory
             elif torch.backends.mps.is_available():
                 end_gpu_memory = torch.mps.driver_allocated_memory() / (1024 * 1024)
                 self.gpu_memory_usage = end_gpu_memory - start_gpu_memory
@@ -752,9 +748,17 @@ class SimpleNeuralNetwork(BaseModel):
         self.patience_counter = 0
         self.best_model_state = None
 
+    def _init_weights(self, m):
+        """Initialize weights for the neural network layers."""
+        if isinstance(m, nn.Linear):
+            nn.init.kaiming_uniform_(m.weight, nonlinearity="relu")
+            if m.bias is not None:
+                nn.init.zeros_(m.bias)
+
     def _build_model(self, input_dim):
         """Build the neural network architecture."""
         model = SimpleNeuralNetworkModule(input_dim)
+        # model.apply(self._init_weights)
         return model
 
     def _early_stopping(self, val_loss):
@@ -771,7 +775,7 @@ class SimpleNeuralNetwork(BaseModel):
 
     @BaseModel.track_resources
     def train(
-        self, X_train, y_train, lr=1e-3, epochs=50, batch_size=256, validation_split=0.2
+        self, X_train, y_train, lr=1e-4, epochs=50, batch_size=256, validation_split=0.2
     ):
         """Train the simple neural network."""
         # Handle sparse matrix
@@ -902,13 +906,13 @@ class SimpleNeuralNetwork(BaseModel):
 
     def plot_history(self):
         """Plot training and validation loss history."""
-        plt.figure(figsize=(10, 5))
-        sns.lineplot(self.history["train_loss"], label="Train Loss")
-        sns.lineplot(self.history["val_loss"], label="Validation Loss")
-        plt.xlabel("Epochs")
-        plt.ylabel("Loss")
-        plt.title("Training and Validation Loss History")
-        plt.legend()
+        fig, ax = plt.subplots()
+        sns.lineplot(self.history["train_loss"], label="Train Loss", ax=ax)
+        sns.lineplot(self.history["val_loss"], label="Validation Loss", ax=ax)
+        ax.set_xlabel("Epochs")
+        ax.set_ylabel("Loss")
+        fig.suptitle("Training and Validation Loss History")
+        fig.legend()
         plt.tight_layout()
         plt.savefig("simple_nn_history.png", bbox_inches="tight")
         plt.show()
@@ -990,9 +994,17 @@ class ComplexNeuralNetwork(BaseModel):
         self.patience_counter = 0
         self.best_model_state = None
 
+    def _init_weights(self, m):
+        """Initialize weights for the neural network layers."""
+        if isinstance(m, nn.Linear):
+            nn.init.kaiming_uniform_(m.weight, nonlinearity="relu")
+            if m.bias is not None:
+                nn.init.zeros_(m.bias)
+
     def _build_model(self, input_dim):
         """Build the neural network architecture."""
         model = ComplexNeuralNetworkModule(input_dim)
+        # model.apply(self._init_weights)
         return model
 
     def _early_stopping(self, val_loss):
@@ -1009,7 +1021,7 @@ class ComplexNeuralNetwork(BaseModel):
 
     @BaseModel.track_resources
     def train(
-        self, X_train, y_train, lr=1e-3, epochs=50, batch_size=256, validation_split=0.2
+        self, X_train, y_train, lr=1e-4, epochs=50, batch_size=256, validation_split=0.2
     ):
         """Train the complex neural network."""
         # Handle sparse matrix
@@ -1140,13 +1152,13 @@ class ComplexNeuralNetwork(BaseModel):
 
     def plot_history(self):
         """Plot training and validation loss history."""
-        plt.figure(figsize=(10, 5))
-        sns.lineplot(self.history["train_loss"], label="Train Loss")
-        sns.lineplot(self.history["val_loss"], label="Validation Loss")
-        plt.xlabel("Epochs")
-        plt.ylabel("Loss")
-        plt.title("Training and Validation Loss History")
-        plt.legend()
+        fig, ax = plt.subplots()
+        sns.lineplot(self.history["train_loss"], label="Train Loss", ax=ax)
+        sns.lineplot(self.history["val_loss"], label="Validation Loss", ax=ax)
+        ax.set_xlabel("Epochs")
+        ax.set_ylabel("Loss")
+        fig.suptitle("Training and Validation Loss History")
+        fig.legend()
         plt.tight_layout()
         plt.savefig("complex_nn_history.png", bbox_inches="tight")
         plt.show()
@@ -1294,7 +1306,7 @@ class ClientPaymentPredictionModel(BaseModel):
         num_layers=2,
         dropout=0.1,
         batch_size=64,
-        learning_rate=1e-3,
+        learning_rate=1e-4,
         epochs=30,
     ):
         """
@@ -1320,8 +1332,40 @@ class ClientPaymentPredictionModel(BaseModel):
         self.learning_rate = learning_rate
         self.epochs = epochs
 
-        # Initialize model
-        self.model = ClientPaymentTransformer(
+        # Loss function and optimizer
+        self.criterion = nn.MSELoss()
+        self.learning_rate = learning_rate
+
+        # Device configuration
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+        # Early stopping parameters
+        self.early_stop_patience = 15
+        self.best_val_loss = float("inf")
+        self.patience_counter = 0
+        self.best_model_state = None
+
+    def _init_weights(self, m):
+        """Initialize weights for the neural network layers."""
+        if isinstance(m, nn.Linear):
+            nn.init.kaiming_uniform_(m.weight, nonlinearity="relu")
+            if m.bias is not None:
+                nn.init.zeros_(m.bias)
+        elif isinstance(m, nn.Embedding):
+            nn.init.xavier_uniform_(m.weight)
+        elif isinstance(m, nn.MultiheadAttention):
+            nn.init.xavier_uniform_(m.in_proj_weight)
+            nn.init.xavier_uniform_(m.out_proj.weight)
+            if m.in_proj_bias is not None:
+                nn.init.zeros_(m.in_proj_bias)
+            if m.out_proj.bias is not None:
+                nn.init.zeros_(m.out_proj.bias)
+
+    def _build_model(
+        self, num_clients, history_length, embed_dim, num_heads, num_layers, dropout
+    ):
+        """Build the neural network architecture."""
+        model = ClientPaymentTransformer(
             num_clients=num_clients,
             history_length=history_length,
             embed_dim=embed_dim,
@@ -1329,24 +1373,8 @@ class ClientPaymentPredictionModel(BaseModel):
             num_layers=num_layers,
             dropout=dropout,
         )
-        self.model.to(self.device)
-
-        # Loss function and optimizer
-        self.criterion = nn.MSELoss()
-        self.optimizer = optim.AdamW(
-            self.model.parameters(), lr=learning_rate, weight_decay=1e-5
-        )
-
-        # Learning rate scheduler for better convergence
-        self.scheduler = optim.lr_scheduler.ReduceLROnPlateau(
-            self.optimizer, mode="min", factor=0.5, patience=3
-        )
-
-        # Early stopping parameters
-        self.early_stop_patience = 15
-        self.best_val_loss = float("inf")
-        self.patience_counter = 0
-        self.best_model_state = None
+        # model.apply(self._init_weights)
+        return model
 
     def _early_stopping(self, val_loss):
         """Implement early stopping logic."""
@@ -1411,6 +1439,26 @@ class ClientPaymentPredictionModel(BaseModel):
         train_dataset = ClientPaymentDataset(X_train, y_train, self.history_length)
         train_loader = DataLoader(
             train_dataset, batch_size=self.batch_size, shuffle=True, num_workers=2
+        )
+
+        # Initialize model
+        self.model = self._build_model(
+            num_clients=self.num_clients,
+            history_length=self.history_length,
+            embed_dim=self.embed_dim,
+            num_heads=self.num_heads,
+            num_layers=self.num_layers,
+            dropout=self.dropout,
+        )
+        self.model.to(self.device)
+
+        self.optimizer = optim.AdamW(
+            self.model.parameters(), lr=self.learning_rate, weight_decay=1e-5
+        )
+
+        # Learning rate scheduler for better convergence
+        self.scheduler = optim.lr_scheduler.ReduceLROnPlateau(
+            self.optimizer, mode="min", factor=0.5, patience=3
         )
 
         # Training loop
@@ -1567,13 +1615,13 @@ class ClientPaymentPredictionModel(BaseModel):
 
     def plot_history(self):
         """Plot training and validation loss history."""
-        plt.figure(figsize=(10, 5))
-        sns.lineplot(self.history["train_loss"], label="Train Loss")
-        sns.lineplot(self.history["val_loss"], label="Validation Loss")
-        plt.xlabel("Epochs")
-        plt.ylabel("Loss")
-        plt.title("Training and Validation Loss History")
-        plt.legend()
+        fig, ax = plt.subplots()
+        sns.lineplot(self.history["train_loss"], label="Train Loss", ax=ax)
+        sns.lineplot(self.history["val_loss"], label="Validation Loss", ax=ax)
+        ax.set_xlabel("Epochs")
+        ax.set_ylabel("Loss")
+        fig.suptitle("Training and Validation Loss History")
+        fig.legend()
         plt.tight_layout()
         plt.savefig("transformer_nn_history.png", bbox_inches="tight")
         plt.show()
@@ -1779,7 +1827,7 @@ def main():
             num_layers=2,
             dropout=0.1,
             batch_size=256,
-            learning_rate=1e-3,
+            learning_rate=1e-4,
             epochs=50,
         ),
     ]
