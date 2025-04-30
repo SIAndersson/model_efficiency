@@ -848,7 +848,6 @@ class SimpleNeuralNetwork(BaseModel):
                     pbar.set_postfix({"loss": loss.item()})
 
             train_loss = train_loss / len(train_loader.dataset)
-            print(f"Epoch {epoch + 1}/{epochs} - Train Loss: {train_loss:.4f}")
 
             # Validation
             self.model.eval()
@@ -865,6 +864,9 @@ class SimpleNeuralNetwork(BaseModel):
             # Record history
             self.history["train_loss"].append(train_loss)
             self.history["val_loss"].append(val_loss)
+            print(
+                f"Epoch {epoch + 1}/{epochs} - Train Loss: {train_loss:.4f}, Val Loss: {val_loss:.4f}"
+            )
 
             # Early stopping
             stop, save_model = self._early_stopping(val_loss)
@@ -1084,7 +1086,6 @@ class ComplexNeuralNetwork(BaseModel):
                     pbar.set_postfix({"loss": loss.item()})
 
             train_loss = train_loss / len(train_loader.dataset)
-            print(f"Epoch {epoch + 1}/{epochs} - Train Loss: {train_loss:.4f}")
 
             # Validation
             self.model.eval()
@@ -1101,6 +1102,9 @@ class ComplexNeuralNetwork(BaseModel):
             # Record history
             self.history["train_loss"].append(train_loss)
             self.history["val_loss"].append(val_loss)
+            print(
+                f"Epoch {epoch + 1}/{epochs} - Train Loss: {train_loss:.4f}, Val Loss: {val_loss:.4f}"
+            )
 
             # Early stopping
             stop, save_model = self._early_stopping(val_loss)
@@ -1338,6 +1342,24 @@ class ClientPaymentPredictionModel(BaseModel):
             self.optimizer, mode="min", factor=0.5, patience=3
         )
 
+        # Early stopping parameters
+        self.early_stop_patience = 15
+        self.best_val_loss = float("inf")
+        self.patience_counter = 0
+        self.best_model_state = None
+
+    def _early_stopping(self, val_loss):
+        """Implement early stopping logic."""
+        if val_loss < self.best_val_loss:
+            self.best_val_loss = val_loss
+            self.patience_counter = 0
+            return False, True  # Don't stop, save model
+        else:
+            self.patience_counter += 1
+            if self.patience_counter >= self.early_stop_patience:
+                return True, False  # Stop, don't save model
+            return False, False  # Don't stop, don't save model
+
     @BaseModel.track_resources
     def train(self, X_train, y_train, X_val=None, y_val=None):
         """Train the model.
@@ -1439,20 +1461,23 @@ class ClientPaymentPredictionModel(BaseModel):
                 # Learning rate scheduler step
                 self.scheduler.step(val_loss)
 
-                # Save best model
-                if val_loss < best_val_loss:
-                    best_val_loss = val_loss
-                    torch.save(self.model.state_dict(), f"{self.name}_best.pth")
-
                 print(
                     f"Epoch {epoch + 1}/{self.epochs}, Train Loss: {train_loss:.4f}, Val Loss: {val_loss:.4f}"
                 )
             else:
                 print(f"Epoch {epoch + 1}/{self.epochs}, Train Loss: {train_loss:.4f}")
 
-        # Load best model if validation was used
-        if val_loader and os.path.exists(f"{self.name}_best.pth"):
-            self.model.load_state_dict(torch.load(f"{self.name}_best.pth"))
+            # Early stopping
+            stop, save_model = self._early_stopping(val_loss)
+            if save_model:
+                self.best_model_state = self.model.state_dict().copy()
+            if stop:
+                print(f"Early stopping at epoch {epoch}")
+                break
+
+        # Load best model if early stopping was triggered
+        if self.best_model_state is not None:
+            self.model.load_state_dict(self.best_model_state)
 
         self.plot_history()
 
