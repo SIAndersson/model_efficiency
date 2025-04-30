@@ -780,7 +780,7 @@ class SimpleNeuralNetwork(BaseModel):
 
     @BaseModel.track_resources
     def train(
-        self, X_train, y_train, lr=1e-4, epochs=50, batch_size=256, validation_split=0.2
+        self, X_train, y_train, lr=1e-4, epochs=1, batch_size=256, validation_split=0.2
     ):
         """Train the simple neural network."""
         # Handle sparse matrix
@@ -1025,7 +1025,7 @@ class ComplexNeuralNetwork(BaseModel):
 
     @BaseModel.track_resources
     def train(
-        self, X_train, y_train, lr=1e-4, epochs=50, batch_size=256, validation_split=0.2
+        self, X_train, y_train, lr=1e-4, epochs=1, batch_size=256, validation_split=0.2
     ):
         """Train the complex neural network."""
         # Handle sparse matrix
@@ -1830,7 +1830,7 @@ def main():
             dropout=0.1,
             batch_size=256,
             learning_rate=1e-4,
-            epochs=50,
+            epochs=1,
         ),
     ]
 
