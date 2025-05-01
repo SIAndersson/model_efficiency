@@ -781,7 +781,7 @@ class SimpleNeuralNetwork(BaseModel):
 
     @BaseModel.track_resources
     def train(
-        self, X_train, y_train, lr=1e-2, epochs=1, batch_size=256, validation_split=0.2
+        self, X_train, y_train, lr=1e-3, epochs=1, batch_size=256, validation_split=0.2
     ):
         """Train the simple neural network."""
         # Handle sparse matrix
