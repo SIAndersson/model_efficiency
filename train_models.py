@@ -105,6 +105,15 @@ class DataProcessor:
             
         self.data['last_3_avg_days'] = self.data.groupby('client_encoded')['days_to_payment'].transform(
             lambda x: x.shift(1).rolling(3, min_periods=1).mean())
+        
+        # Fill with client-specific average when available
+        for client in self.data['client_encoded'].unique():
+            client_mask = self.data['client_encoded'] == client
+            client_avg = self.data.loc[client_mask, 'last_3_avg_days'].mean()
+            if not np.isnan(client_avg):
+                self.data.loc[client_mask, 'last_3_avg_days'] = self.data.loc[client_mask, 'last_3_avg_days'].fillna(client_avg)
+                
+        self.data = self.data.fillna(self.data.mean())  # Fill any remaining NaN values with mean
 
         return self.data
 
@@ -330,6 +339,14 @@ class BaseModel:
             y_test = y_test.values
         if isinstance(y_pred, pd.Series):
             y_pred = y_pred.values
+            
+        # See if we have NaN
+        if np.isnan(y_test).any():
+            print(f"Warning: {len(y_test[np.isnan(y_test)])} NaN values found in test data out of {len(y_test)}.")
+            print(y_test)
+        if np.isnan(y_pred).any():
+            print(f"Warning: {len(y_pred[np.isnan(y_pred)])} NaN values found in prediction data out of {len(y_pred)}.")
+            print(y_pred)
 
         mae = mean_absolute_error(y_test, y_pred)
         mse = mean_squared_error(y_test, y_pred)
