@@ -102,13 +102,16 @@ class DataProcessor:
             self.data["client_encoded"] = (
                 self.data["client"].astype("category").cat.codes
             )
+            
+        self.data['last_3_avg_days'] = self.data.groupby('client_encoded')['days_to_payment'].transform(
+            lambda x: x.shift(1).rolling(3, min_periods=1).mean())
 
         return self.data
 
     def prepare_features(self) -> None:
         """Prepare features and targets for modeling."""
         # Features and target
-        X = self.data[["client_encoded", "due_month", "due_day", "due_weekday"]]
+        X = self.data[["client_encoded", "due_month", "due_day", "due_weekday", "last_3_avg_days"]]
         y = self.data["days_to_payment"]
 
         # Get unique clients
