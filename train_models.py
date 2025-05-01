@@ -1076,7 +1076,7 @@ class ComplexNeuralNetworkModule(nn.Module):
         # Activation
         self.relu = nn.ReLU()
 
-    def forward(self, x, client_ids):
+    def forward(self, x):
         """
         Forward pass through the network.
         Args:
