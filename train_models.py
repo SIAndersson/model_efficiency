@@ -2,9 +2,11 @@
 Invoice Payment Date Prediction
 ===============================
 This script compares different models for predicting when clients will pay invoices:
-1. Statistical model (linear regression)
-2. Simple neural network
-3. Complex neural network
+1. Simple stats
+2. Statistical model (linear regression)
+3. Simple neural network
+4. Complex neural network
+5. Transformer model
 
 It evaluates each model's performance, resource usage, and analyzes how predictions
 correlate with client behavior profiles.
@@ -275,9 +277,7 @@ class BaseModel:
             start_gpu_memory = 0
             if torch.cuda.is_available():
                 torch.cuda.reset_peak_memory_stats()
-                gpus = GPUtil.getGPUs()
-                if gpus:
-                    start_gpu_memory = gpus[0].memoryUsed  # MB
+                start_gpu_memory = torch.cuda.memory_allocated() / (1024 * 1024)  # MB
             if torch.backends.mps.is_available():
                 torch.mps.empty_cache()
                 start_gpu_memory = torch.mps.driver_allocated_memory() / (
@@ -294,10 +294,8 @@ class BaseModel:
             # Track GPU memory if available
             end_gpu_memory = 0
             if torch.cuda.is_available():
-                gpus = GPUtil.getGPUs()
-                if gpus:
-                    end_gpu_memory = gpus[0].memoryUsed  # MB
-                self.gpu_memory_usage = end_gpu_memory - start_gpu_memory
+                end_gpu_memory = torch.cuda.memory_allocated() / (1024 * 1024)  # MB
+                self.gpu_memory_usage = torch.cuda.max_memory_allocated() / (1024 * 1024)  # Peak usage
             elif torch.backends.mps.is_available():
                 end_gpu_memory = torch.mps.driver_allocated_memory() / (1024 * 1024)
                 self.gpu_memory_usage = end_gpu_memory - start_gpu_memory
