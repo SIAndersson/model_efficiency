@@ -340,19 +340,21 @@ class AsymmetricLoss(nn.Module):
 
 
 class QuantileLoss(nn.Module):
-    def __init__(
-        self, quantile=0.75
-    ):
+    def __init__(self, quantiles=[0.1, 0.5, 0.9]):
         super(QuantileLoss, self).__init__()
-        self.quantile = quantile
+        self.quantiles = torch.tensor(quantiles).view(1, -1)  # shape (1, num_quantiles)
 
-    def forward(self, pred, target):
-        # Calculate base loss
-        base_loss = target - pred
+    def forward(self, preds, target):
         
-        return torch.max(self.quantile * base_loss, (self.quantile - 1) * base_loss).mean()
+        errors = target - preds  # (batch_size, num_quantiles)
 
-
+        loss = torch.max(
+            self.quantiles.to(preds.device) * errors,
+            (self.quantiles.to(preds.device) - 1) * errors
+        )
+        return loss.mean()
+    
+    
 class BaseModel:
     """Base class for all models."""
 
@@ -1040,16 +1042,18 @@ class SimpleNeuralNetwork(BaseModel):
 class ComplexNeuralNetworkModule(nn.Module):
     """PyTorch module for complex neural network."""
 
-    def __init__(self, input_dim):
+    def __init__(self, input_dim, num_clients=5000, embedding_dim=8):
         """Initialize the neural network layers.
 
         Args:
             input_dim: Dimension of input features
         """
         super(ComplexNeuralNetworkModule, self).__init__()
+        # Embeddings
+        self.client_embedding = nn.Embedding(num_clients, embedding_dim)
 
         # Layer 1
-        self.layer1 = nn.Linear(input_dim, 256)
+        self.layer1 = nn.Linear(input_dim + embedding_dim, 256)
         self.bn1 = nn.BatchNorm1d(256)
         self.dropout1 = nn.Dropout(0.3)
 
@@ -1072,8 +1076,19 @@ class ComplexNeuralNetworkModule(nn.Module):
         # Activation
         self.relu = nn.ReLU()
 
-    def forward(self, x):
-        """Forward pass through the network."""
+    def forward(self, x, client_ids):
+        """
+        Forward pass through the network.
+        Args:
+            x: Input features excluding client ID (batch_size, input_dim)
+            client_ids: Client ID tensor (batch_size,)
+        """
+        client_ids = x[:, 0].long()  # Assuming client ID is the first column
+        x = x[:, 1:]  # Exclude client ID from features
+        
+        embedded_clients = self.client_embedding(client_ids)  # (batch_size, embedding_dim)
+        x = torch.cat([x, embedded_clients], dim=1)  # (batch_size, input_dim + embedding_dim)
+        
         # Layer 1
         x = self.layer1(x)
         x = self.bn1(x)
@@ -1120,9 +1135,9 @@ class ComplexNeuralNetwork(BaseModel):
             if m.bias is not None:
                 nn.init.zeros_(m.bias)
 
-    def _build_model(self, input_dim):
+    def _build_model(self, input_dim, num_clients):
         """Build the neural network architecture."""
-        model = ComplexNeuralNetworkModule(input_dim)
+        model = ComplexNeuralNetworkModule(input_dim, num_clients=num_clients)
         # model.apply(self._init_weights)
         return model
 
@@ -1184,7 +1199,7 @@ class ComplexNeuralNetwork(BaseModel):
         val_loader = DataLoader(val_dataset, batch_size=batch_size)
 
         # Build the model and move to device
-        self.model = self._build_model(X_train.shape[1])
+        self.model = self._build_model(X_train.shape[1], len(unique_clients))
         self.model.to(self.device)
 
         # Define loss function and optimizer
@@ -1224,6 +1239,7 @@ class ComplexNeuralNetwork(BaseModel):
             with torch.no_grad():
                 for inputs, targets in val_loader:
                     inputs, targets = inputs.to(self.device), targets.to(self.device)
+                    
                     outputs = self.model(inputs)
                     loss = criterion(outputs, targets)
                     val_loss += loss.item() * inputs.size(0)

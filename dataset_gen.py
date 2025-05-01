@@ -4,7 +4,10 @@ import pandas as pd
 from datetime import datetime, timedelta
 from typing import List, Dict, Tuple
 from tqdm import tqdm
+import seaborn as sns
 import matplotlib.pyplot as plt
+
+sns.set_theme(style="whitegrid", context="talk")
 
 # ------------------------
 # Configuration parameters
@@ -175,9 +178,10 @@ if __name__ == "__main__":
     print(dataset["days_to_payment"].describe())
     
 
-    # Plot the distribution of days_to_payment
+    # Plot the distribution of days_to_payment using seaborn
+
     plt.figure(figsize=(10, 6))
-    plt.hist(dataset["days_to_payment"], bins=30, color='blue', alpha=0.7, edgecolor='black')
+    sns.histplot(dataset["days_to_payment"], bins=30, kde=True, alpha=0.7)
     plt.title("Distribution of Days to Payment")
     plt.xlabel("Days to Payment")
     plt.ylabel("Frequency")
