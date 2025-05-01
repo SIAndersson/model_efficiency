@@ -1389,12 +1389,12 @@ class ClientPaymentPredictionModel(BaseModel):
         self.best_model_state = None
         
     def init_weights(module):
-    if isinstance(module, nn.Linear):
-        nn.init.xavier_uniform_(module.weight)
-        if module.bias is not None:
-            nn.init.zeros_(module.bias)
-    elif isinstance(module, nn.MultiheadAttention):
-        nn.init.xavier_uniform_(module.in_proj_weight)
+        if isinstance(module, nn.Linear):
+            nn.init.xavier_uniform_(module.weight)
+            if module.bias is not None:
+                nn.init.zeros_(module.bias)
+        elif isinstance(module, nn.MultiheadAttention):
+            nn.init.xavier_uniform_(module.in_proj_weight)
 
     def _early_stopping(self, val_loss):
         """Implement early stopping logic."""
