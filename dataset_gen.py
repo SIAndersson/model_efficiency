@@ -170,4 +170,3 @@ if __name__ == "__main__":
     print(dataset.head())
     dataset.to_csv("toy_invoices_with_client_patterns.csv", index=False)
     future_dataset.to_csv("toy_invoices_future.csv", index=False)
-

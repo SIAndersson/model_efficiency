@@ -18,7 +18,6 @@ import time
 from collections import defaultdict
 from typing import Dict, List, Tuple, Union
 
-import GPUtil
 import joblib
 import matplotlib.pyplot as plt
 import numpy as np
@@ -35,6 +34,7 @@ from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from sklearn.model_selection import train_test_split
 from torch.utils.data import DataLoader, Dataset, TensorDataset
 from tqdm import tqdm
+import argparse
 
 # --------------------------------
 
@@ -53,6 +53,12 @@ sns.set_theme(style="whitegrid", context="talk")
 # Data Loading and Preprocessing
 # --------------------------------
 
+def parse_args():
+    """Parse command-line arguments."""
+    parser = argparse.ArgumentParser(description="Train models for invoice payment prediction.")
+    parser.add_argument("--batch_size", type=int, default=256, help="Batch size for training.")
+    parser.add_argument("--epochs", type=int, default=10, help="Number of epochs for training.")
+    return parser.parse_args()
 
 class DataProcessor:
     def __init__(self, data_path: str):
@@ -295,7 +301,9 @@ class BaseModel:
             end_gpu_memory = 0
             if torch.cuda.is_available():
                 end_gpu_memory = torch.cuda.memory_allocated() / (1024 * 1024)  # MB
-                self.gpu_memory_usage = torch.cuda.max_memory_allocated() / (1024 * 1024)  # Peak usage
+                self.gpu_memory_usage = torch.cuda.max_memory_allocated() / (
+                    1024 * 1024
+                )  # Peak usage
             elif torch.backends.mps.is_available():
                 end_gpu_memory = torch.mps.driver_allocated_memory() / (1024 * 1024)
                 self.gpu_memory_usage = end_gpu_memory - start_gpu_memory
@@ -319,11 +327,6 @@ class BaseModel:
             y_test = y_test.values
         if isinstance(y_pred, pd.Series):
             y_pred = y_pred.values
-
-        print(self.name)
-        print(X_test.shape)
-        print(y_test.shape)
-        print(y_pred.shape)
 
         mae = mean_absolute_error(y_test, y_pred)
         mse = mean_squared_error(y_test, y_pred)
@@ -690,7 +693,7 @@ class StatisticalModel(BaseModel):
         self.model = LinearRegression()
 
     @BaseModel.track_resources
-    def train(self, X_train, y_train):
+    def train(self, X_train, y_train, epochs=None, batch_size=None):
         """Train the linear regression model."""
         # Make sure training data doesn't contain NaN or infinity
         if np.isnan(X_train.values).any() or np.isinf(X_train.values).any():
@@ -1164,6 +1167,7 @@ class ComplexNeuralNetwork(BaseModel):
         plt.savefig("complex_nn_history.png", bbox_inches="tight")
         plt.show()
 
+
 class ClientPaymentTransformer(nn.Module):
     """Transformer-based model for client payment prediction without requiring history dataset."""
 
@@ -1318,9 +1322,7 @@ class ClientPaymentPredictionModel(BaseModel):
 
         # Define loss function and optimizer
         criterion = nn.MSELoss()
-        self.optimizer =  optim.AdamW(
-            self.model.parameters(), lr=lr, weight_decay=1e-5
-        )
+        self.optimizer = optim.AdamW(self.model.parameters(), lr=lr, weight_decay=1e-5)
 
         # Learning rate scheduler
         scheduler = optim.lr_scheduler.ReduceLROnPlateau(
@@ -1393,36 +1395,26 @@ class ClientPaymentPredictionModel(BaseModel):
 
         return self
 
-    def predict(self, X):
+    def predict(self, X, batch_size=1024):
         """Make predictions using the trained model."""
-        # Handle sparse matrix
-        if sp.issparse(X):
-            X = X.toarray()
-        
-        print(f"Predict called. Type: {type(X)}")
-        
-        # Sanity check for DataFrame dtype
-        if isinstance(X, pd.DataFrame):
-            print("DataFrame dtypes:")
-            print(X.dtypes)
-            if not all(np.issubdtype(dtype, np.number) for dtype in X.dtypes):
-                raise ValueError("Non-numeric data found in input DataFrame.")
-
 
         self.model.eval()
-        # Check for NaNs or infs
+        predictions = []
+
+        # Convert to PyTorch tensor
         if isinstance(X, pd.DataFrame):
-            X_tensor = torch.FloatTensor(X.values).to(self.device)
+            X_tensor = torch.FloatTensor(X.values)
         else:
-            X_tensor = torch.FloatTensor(X).to(self.device)
+            X_tensor = torch.FloatTensor(X)
 
-        print(f"Tensor shape: {X_tensor.shape}")
-        print(f"Tensor device: {X_tensor.device}")
-        print(f"Model device: {next(self.model.parameters()).device}")
+        # Process in batches to avoid memory issues
+        for i in range(0, X_tensor.shape[0], batch_size):
+            batch = X_tensor[i : i + batch_size].to(self.device)
+            with torch.no_grad():
+                batch_predictions = self.model(batch)
+                predictions.append(batch_predictions.cpu().numpy())
 
-        with torch.no_grad():
-            predictions = self.model(X_tensor)
-        return predictions.cpu().numpy()
+        return np.concatenate(predictions, axis=0)
 
     def save_model(self, path: str = "transformer_model.pt"):
         """Save the model to disk."""
@@ -1440,6 +1432,7 @@ class ClientPaymentPredictionModel(BaseModel):
         plt.tight_layout()
         plt.savefig("transformer_history.png", bbox_inches="tight")
         plt.show()
+
 
 # --------------------------------
 # Analysis and Visualization
@@ -1608,6 +1601,9 @@ class ModelAnalyzer:
 
 def main():
     """Main execution function."""
+    args = parse_args()
+    batch_size = args.batch_size if args.batch_size else 256
+    epochs = args.epochs if args.epochs else 1
     # Check for GPU
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     if torch.backends.mps.is_available():
@@ -1633,8 +1629,7 @@ def main():
         StatisticalModel(),
         SimpleNeuralNetwork(),
         ComplexNeuralNetwork(),
-        ClientPaymentPredictionModel(
-        ),
+        ClientPaymentPredictionModel(),
     ]
 
     print(data.head())
@@ -1642,7 +1637,7 @@ def main():
     for model in models:
         print(f"Training {model.name}...")
         try:
-            model.train(X_train_orig, y_train)
+            model.train(X_train_orig, y_train, epochs=epochs, batch_size=batch_size)
         except:
             model.train(data)
         metrics = model.evaluate(X_test_orig, y_test)
@@ -1676,4 +1671,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
