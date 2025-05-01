@@ -321,6 +321,8 @@ class AsymmetricLoss(nn.Module):
         # Where actual is late (>0) but prediction is not late (<=0)
         missed_late = (target > 0) & (input <= 0)
         weights[missed_late] = self.late_penalty
+        
+        weights = torch.nan_to_num(weights, nan=1.0)
 
         # Apply weights
         weighted_loss = weights * base_loss
@@ -1385,6 +1387,14 @@ class ClientPaymentPredictionModel(BaseModel):
         self.best_val_loss = float("inf")
         self.patience_counter = 0
         self.best_model_state = None
+        
+    def init_weights(module):
+    if isinstance(module, nn.Linear):
+        nn.init.xavier_uniform_(module.weight)
+        if module.bias is not None:
+            nn.init.zeros_(module.bias)
+    elif isinstance(module, nn.MultiheadAttention):
+        nn.init.xavier_uniform_(module.in_proj_weight)
 
     def _early_stopping(self, val_loss):
         """Implement early stopping logic."""
@@ -1458,6 +1468,7 @@ class ClientPaymentPredictionModel(BaseModel):
             num_layers=self.num_layers,
             dropout=self.dropout,
         )
+        self.model.apply(self.init_weights)
         self.model.to(self.device)
 
         # Define loss function and optimizer
