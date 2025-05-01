@@ -16,3 +16,4 @@ wheels/
 *.pt
 *.pth
 *.joblib
+.ruff_cache/
