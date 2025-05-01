@@ -107,13 +107,13 @@ class DataProcessor:
             lambda x: x.shift(1).rolling(3, min_periods=1).mean())
         
         # Fill with client-specific average when available, commented out cb its so slow
-        """for client in self.data['client_encoded'].unique():
+        for client in self.data['client_encoded'].unique():
             client_mask = self.data['client_encoded'] == client
             client_avg = self.data.loc[client_mask, 'last_3_avg_days'].mean()
             if not np.isnan(client_avg):
-                self.data.loc[client_mask, 'last_3_avg_days'] = self.data.loc[client_mask, 'last_3_avg_days'].fillna(client_avg)"""
+                self.data.loc[client_mask, 'last_3_avg_days'] = self.data.loc[client_mask, 'last_3_avg_days'].fillna(client_avg)
                 
-        self.data = self.data.fillna(self.data.mean())  # Fill any remaining NaN values with mean
+        #self.data = self.data.fillna(self.data.mean())  # Fill any remaining NaN values with mean
 
         return self.data
 
