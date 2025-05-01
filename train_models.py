@@ -829,7 +829,7 @@ class SimpleNeuralNetwork(BaseModel):
         self.model.to(self.device)
 
         # Define loss function and optimizer
-        criterion = nn.MSELoss()
+        criterion = nn.HuberLoss()
         optimizer = optim.AdamW(self.model.parameters(), lr=lr, weight_decay=1e-5)
 
         # Training loop
@@ -1074,7 +1074,7 @@ class ComplexNeuralNetwork(BaseModel):
         self.model.to(self.device)
 
         # Define loss function and optimizer
-        criterion = nn.MSELoss()
+        criterion = nn.HuberLoss()
         optimizer = optim.AdamW(self.model.parameters(), lr=lr, weight_decay=1e-5)
 
         # Training loop
@@ -1321,7 +1321,7 @@ class ClientPaymentPredictionModel(BaseModel):
         self.model.to(self.device)
 
         # Define loss function and optimizer
-        criterion = nn.MSELoss()
+        criterion = nn.HuberLoss()
         self.optimizer = optim.AdamW(self.model.parameters(), lr=lr, weight_decay=1e-5)
 
         # Learning rate scheduler

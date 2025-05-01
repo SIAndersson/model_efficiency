@@ -168,5 +168,9 @@ if __name__ == "__main__":
         NUM_CLIENTS, INVOICES_PER_CLIENT, SEED
     )
     print(dataset.head())
+    # Print distribution of payment behavior
+    print(dataset["payment_behavior"].value_counts(normalize=True))
+    # Print distribution of payment delays
+    print(dataset["days_to_payment"].describe())
     dataset.to_csv("toy_invoices_with_client_patterns.csv", index=False)
     future_dataset.to_csv("toy_invoices_future.csv", index=False)
