@@ -1388,7 +1388,7 @@ class ClientPaymentPredictionModel(BaseModel):
         self.patience_counter = 0
         self.best_model_state = None
         
-    def init_weights(module):
+    def init_weights(self, module):
         if isinstance(module, nn.Linear):
             nn.init.xavier_uniform_(module.weight)
             if module.bias is not None:
