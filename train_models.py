@@ -1392,6 +1392,8 @@ class ClientPaymentPredictionModel(BaseModel):
         # Load best model if early stopping was triggered
         if self.best_model_state is not None:
             self.model.load_state_dict(self.best_model_state)
+            
+        self.plot_history()
 
         return self
 
@@ -1503,6 +1505,14 @@ class ModelAnalyzer:
         plt.tight_layout()
         plt.savefig("model_performance_comparison.png")
         plt.close()
+        
+    def categorize_behavior(self, pred_days):
+        if pred_days < 0:
+            return "early"
+        elif pred_days <= 3:
+            return "on_time"
+        else:
+            return "late"
 
     def analyze_predictions_by_behavior(
         self, X_test_orig, y_test, model_predictions: Dict[str, np.ndarray]
@@ -1534,6 +1544,7 @@ class ModelAnalyzer:
                 analysis_df[f"{model_name}_error"] = np.abs(
                     analysis_df["true_days"] - preds
                 )
+                analysis_df[f"{model_name}_pred_type"] = analysis_df[f"{model_name}_pred"].apply(self.categorize_behavior)
 
             # Group by behavior profile and calculate mean error for each model
             behavior_results = []
@@ -1548,6 +1559,9 @@ class ModelAnalyzer:
                     result[f"{model_name}_mean_error"] = behavior_data[
                         f"{model_name}_error"
                     ].mean()
+                    result[f"{model_name}_pred_early"] = len(behavior_data[f"{model_name}_pred"][behavior_data[f"{model_name}_pred_type"] == "early"]) / len(behavior_data[f"{model_name}_pred"])
+                    result[f"{model_name}_pred_on_time"] = len(behavior_data[f"{model_name}_pred"][behavior_data[f"{model_name}_pred_type"] == "on_time"]) / len(behavior_data[f"{model_name}_pred"])
+                    result[f"{model_name}_pred_late"] = len(behavior_data[f"{model_name}_pred"][behavior_data[f"{model_name}_pred_type"] == "late"]) / len(behavior_data[f"{model_name}_pred"])
 
                 behavior_results.append(result)
 
@@ -1592,7 +1606,60 @@ class ModelAnalyzer:
         plt.tight_layout()
         plt.savefig("model_error_by_behavior.png")
         plt.close()
+        
+        # Plot per model what it predicted per behavior
+        # Reshape data for plotting proportions
+        proportion_data = []
+        for model_name in [col.replace("_pred_early", "") for col in behavior_df.columns if "_pred_early" in col]:
+            for behavior in behavior_df["behavior_profile"]:
+                proportion_data.append({
+                    "behavior_profile": behavior,
+                    "model": model_name,
+                    "predicted_behavior": "early",
+                    "proportion": behavior_df.loc[behavior_df["behavior_profile"] == behavior, f"{model_name}_pred_early"].values[0],
+                })
+                proportion_data.append({
+                    "behavior_profile": behavior,
+                    "model": model_name,
+                    "predicted_behavior": "on_time",
+                    "proportion": behavior_df.loc[behavior_df["behavior_profile"] == behavior, f"{model_name}_pred_on_time"].values[0],
+                })
+                proportion_data.append({
+                    "behavior_profile": behavior,
+                    "model": model_name,
+                    "predicted_behavior": "late",
+                    "proportion": behavior_df.loc[behavior_df["behavior_profile"] == behavior, f"{model_name}_pred_late"].values[0],
+                })
 
+        proportion_df = pd.DataFrame(proportion_data)
+
+        # Create a figure with subplots for each model
+        unique_models = proportion_df["model"].unique()
+        num_models = len(unique_models)
+        fig, axes = plt.subplots(num_models, 1, figsize=(14, 5 * num_models), sharex=True)
+
+        if num_models == 1:
+            axes = [axes]  # Ensure axes is iterable for a single subplot
+
+        for ax, model_name in zip(axes, unique_models):
+            model_data = proportion_df[proportion_df["model"] == model_name]
+            sns.barplot(
+            x="behavior_profile",
+            y="proportion",
+            hue="predicted_behavior",
+            data=model_data,
+            ci=None,
+            ax=ax
+            )
+            ax.set_title(f"Proportions of Predicted Behavior for {model_name}")
+            ax.set_xlabel("Client Behavior Profile")
+            ax.set_ylabel("Proportion")
+            ax.legend(title="Predicted Behavior")
+            ax.tick_params(axis="x", rotation=45)
+
+        plt.tight_layout()
+        plt.savefig("predicted_behavior_proportions_by_model.png")
+        plt.close()
 
 # --------------------------------
 # Main Execution
