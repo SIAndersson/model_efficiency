@@ -1166,42 +1166,12 @@ class ComplexNeuralNetwork(BaseModel):
         plt.savefig("complex_nn_history.png", bbox_inches="tight")
         plt.show()
 
-
-class ClientAttentionBlock(nn.Module):
-    """Self-attention block for processing client payment history."""
-
-    def __init__(self, embed_dim, num_heads=4, dropout=0.1):
-        super(ClientAttentionBlock, self).__init__()
-        self.attention = nn.MultiheadAttention(embed_dim, num_heads, dropout=dropout)
-        self.norm1 = nn.LayerNorm(embed_dim)
-        self.norm2 = nn.LayerNorm(embed_dim)
-        self.feed_forward = nn.Sequential(
-            nn.Linear(embed_dim, embed_dim * 4),
-            nn.ReLU(),
-            nn.Dropout(dropout),
-            nn.Linear(embed_dim * 4, embed_dim),
-            nn.Dropout(dropout),
-        )
-
-    def forward(self, x):
-        # Self-attention with residual connection
-        attn_output, _ = self.attention(x, x, x)
-        x = self.norm1(x + attn_output)
-
-        # Feed-forward with residual connection
-        ff_output = self.feed_forward(x)
-        x = self.norm2(x + ff_output)
-
-        return x
-
-
 class ClientPaymentTransformer(nn.Module):
-    """Transformer-based model for client payment prediction."""
+    """Transformer-based model for client payment prediction without requiring history dataset."""
 
     def __init__(
         self,
-        num_clients,
-        history_length=20,
+        input_dim,
         embed_dim=64,
         num_heads=4,
         num_layers=2,
@@ -1209,175 +1179,70 @@ class ClientPaymentTransformer(nn.Module):
     ):
         super(ClientPaymentTransformer, self).__init__()
 
-        # Client embedding layer
-        self.client_embedding = nn.Embedding(num_clients, embed_dim // 2)
+        # Feature processing
+        self.feature_projection = nn.Linear(input_dim, embed_dim)
 
-        # Temporal features: month, day, weekday
-        self.month_embedding = nn.Embedding(13, embed_dim // 8)  # 1-12 months
-        self.day_embedding = nn.Embedding(32, embed_dim // 8)  # 1-31 days
-        self.weekday_embedding = nn.Embedding(7, embed_dim // 8)  # 0-6 weekdays
-
-        # History feature projection
-        self.history_projection = nn.Linear(
-            4 + 1, embed_dim
-        )  # 4 features + payment days
-
-        # Positional encoding
-        self.pos_encoding = nn.Parameter(torch.zeros(1, history_length, embed_dim))
-
-        # Transformer blocks
-        self.transformer_blocks = nn.ModuleList(
-            [
-                ClientAttentionBlock(embed_dim, num_heads, dropout)
-                for _ in range(num_layers)
-            ]
+        # Transformer encoder layers
+        self.encoder_layer = nn.TransformerEncoderLayer(
+            d_model=embed_dim,
+            nhead=num_heads,
+            dim_feedforward=embed_dim * 4,
+            dropout=dropout,
+            batch_first=True,
+        )
+        self.transformer_encoder = nn.TransformerEncoder(
+            self.encoder_layer, num_layers=num_layers
         )
 
-        # Feature combiner for current invoice
-        self.current_features_projection = nn.Linear(
-            embed_dim // 2 + 3 * (embed_dim // 8), embed_dim
-        )
-
-        # Final prediction layers
-        self.history_attention = nn.Linear(embed_dim, 1)
+        # Output layer
         self.output_layer = nn.Sequential(
-            nn.Linear(embed_dim * 2, embed_dim),
+            nn.Linear(embed_dim, embed_dim // 2),
             nn.ReLU(),
             nn.Dropout(dropout),
-            nn.Linear(embed_dim, 1),
+            nn.Linear(embed_dim // 2, 1),
         )
 
-    def forward(self, batch):
-        # Extract and process client ID
-        client_id = batch["client_id"]
-        client_emb = self.client_embedding(client_id)
+    def forward(self, x):
+        # Project features to embedding dimension
+        x = self.feature_projection(x)
 
-        # Process current invoice features
-        current_features = batch["current_features"]
-        month_emb = self.month_embedding(current_features[:, 0].long())
-        day_emb = self.day_embedding(current_features[:, 1].long())
-        weekday_emb = self.weekday_embedding(current_features[:, 2].long())
+        # Apply transformer encoder
+        x = self.transformer_encoder(x.unsqueeze(1)).squeeze(1)
 
-        # Combine current features
-        current_emb = torch.cat([client_emb, month_emb, day_emb, weekday_emb], dim=1)
-        current_emb = self.current_features_projection(current_emb)
+        # Final prediction
+        x = self.output_layer(x)
 
-        # Process history - combine features and historical payment behavior
-        history_features = batch["history_features"]
-        history_targets = batch["history_targets"].unsqueeze(-1)
-
-        # Combine history features with their payment outcomes
-        history_combined = torch.cat([history_features, history_targets], dim=2)
-
-        # Project and add positional encoding
-        batch_size, seq_len, _ = history_combined.shape
-        history_projected = self.history_projection(history_combined)
-        history_projected = history_projected + self.pos_encoding[:, :seq_len, :]
-
-        # Transpose for transformer (seq_len, batch_size, embed_dim)
-        history_projected = history_projected.transpose(0, 1)
-
-        # Apply transformer blocks
-        for block in self.transformer_blocks:
-            history_projected = block(history_projected)
-
-        # Transpose back (batch_size, seq_len, embed_dim)
-        history_projected = history_projected.transpose(0, 1)
-
-        # Apply attention to get weighted history representation
-        attention_weights = torch.softmax(
-            self.history_attention(history_projected), dim=1
-        )
-        history_context = torch.sum(attention_weights * history_projected, dim=1)
-
-        # Combine history context with current features for final prediction
-        combined = torch.cat([current_emb, history_context], dim=1)
-        output = self.output_layer(combined)
-
-        return output.squeeze(-1)
+        return x.squeeze(-1)
 
 
 class ClientPaymentPredictionModel(BaseModel):
-    """Model for predicting client payment timing."""
+    """Model for predicting client payment timing using standard data format."""
 
     def __init__(
         self,
-        num_clients,
-        history_length=20,
         embed_dim=64,
         num_heads=4,
         num_layers=2,
         dropout=0.1,
-        batch_size=64,
-        learning_rate=1e-4,
-        epochs=30,
     ):
         """
         Args:
-            num_clients: Number of unique clients in dataset
-            history_length: Number of historical invoices to consider
             embed_dim: Dimension of embeddings
             num_heads: Number of attention heads
             num_layers: Number of transformer layers
             dropout: Dropout rate
-            batch_size: Batch size for training
-            learning_rate: Learning rate
-            epochs: Number of training epochs
         """
         super().__init__(name="ClientPaymentTransformer")
-        self.num_clients = num_clients
-        self.history_length = history_length
         self.embed_dim = embed_dim
         self.num_heads = num_heads
         self.num_layers = num_layers
         self.dropout = dropout
-        self.batch_size = batch_size
-        self.learning_rate = learning_rate
-        self.epochs = epochs
-
-        # Loss function and optimizer
-        self.criterion = nn.MSELoss()
-        self.learning_rate = learning_rate
-
-        # Device configuration
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
         # Early stopping parameters
         self.early_stop_patience = 15
         self.best_val_loss = float("inf")
         self.patience_counter = 0
         self.best_model_state = None
-
-    def _init_weights(self, m):
-        """Initialize weights for the neural network layers."""
-        if isinstance(m, nn.Linear):
-            nn.init.kaiming_uniform_(m.weight, nonlinearity="relu")
-            if m.bias is not None:
-                nn.init.zeros_(m.bias)
-        elif isinstance(m, nn.Embedding):
-            nn.init.xavier_uniform_(m.weight)
-        elif isinstance(m, nn.MultiheadAttention):
-            nn.init.xavier_uniform_(m.in_proj_weight)
-            nn.init.xavier_uniform_(m.out_proj.weight)
-            if m.in_proj_bias is not None:
-                nn.init.zeros_(m.in_proj_bias)
-            if m.out_proj.bias is not None:
-                nn.init.zeros_(m.out_proj.bias)
-
-    def _build_model(
-        self, num_clients, history_length, embed_dim, num_heads, num_layers, dropout
-    ):
-        """Build the neural network architecture."""
-        model = ClientPaymentTransformer(
-            num_clients=num_clients,
-            history_length=history_length,
-            embed_dim=embed_dim,
-            num_heads=num_heads,
-            num_layers=num_layers,
-            dropout=dropout,
-        )
-        # model.apply(self._init_weights)
-        return model
 
     def _early_stopping(self, val_loss):
         """Implement early stopping logic."""
@@ -1392,62 +1257,60 @@ class ClientPaymentPredictionModel(BaseModel):
             return False, False  # Don't stop, don't save model
 
     @BaseModel.track_resources
-    def train(self, X_train, y_train, X_val=None, y_val=None):
-        """Train the model.
+    def train(
+        self,
+        X_train,
+        y_train,
+        lr=1e-4,
+        epochs=1,
+        batch_size=256,
+        validation_split=0.2,
+        optimizer=None,
+    ):
+        """Train the transformer using the same interface as SimpleNN and ComplexNN."""
+        # Handle sparse matrix
+        if sp.issparse(X_train):
+            X_train = X_train.toarray()
 
-        Args:
-            X_train: Training features
-            y_train: Training targets
-            X_val: Validation features (optional)
-            y_val: Validation targets (optional)
-        """
+        # Convert data to PyTorch tensors
+        X_train_tensor = torch.FloatTensor(X_train.values)
 
-        # Validation dataset if provided
-        val_loader = None
-        if X_val is not None and y_val is not None:
-            val_dataset = ClientPaymentDataset(X_val, y_val, self.history_length)
-            val_loader = DataLoader(
-                val_dataset, batch_size=self.batch_size, shuffle=False, num_workers=2
-            )
+        if isinstance(y_train, pd.Series):
+            y_train_tensor = torch.FloatTensor(y_train.values).reshape(-1, 1)
         else:
-            # If no validation data, use training data for validation
-            val_size = 0.2
+            y_train_tensor = torch.FloatTensor(y_train).reshape(-1, 1)
 
-            # Stratified sampling to ensure every client is represented in both train and val
-            unique_clients = X_train["client_encoded"].unique()
-            train_indices = []
-            val_indices = []
+        # Stratified sampling to ensure every class of client_encoded is represented
+        unique_clients = X_train["client_encoded"].unique()
+        train_indices = []
+        val_indices = []
 
-            for client in unique_clients:
-                client_mask = X_train["client_encoded"] == client
-                client_indices = X_train[client_mask].index
+        for client in unique_clients:
+            client_mask = X_train["client_encoded"] == client
+            client_indices = np.where(client_mask)[0]
 
-                # Split indices for this client
-                val_split = int(len(client_indices) * val_size)
-                val_indices.extend(client_indices[:val_split])
-                train_indices.extend(client_indices[val_split:])
+            # Split indices for this client
+            val_split = int(len(client_indices) * validation_split)
+            val_indices.extend(client_indices[:val_split])
+            train_indices.extend(client_indices[val_split:])
 
-            # Create stratified train and validation sets
-            X_val = X_train.loc[val_indices]
-            y_val = y_train.loc[val_indices]
-            X_train = X_train.loc[train_indices]
-            y_train = y_train.loc[train_indices]
+        # Create stratified train and validation sets
+        train_indices = np.array(train_indices)
+        val_indices = np.array(val_indices)
 
-            val_dataset = ClientPaymentDataset(X_val, y_val, self.history_length)
-            val_loader = DataLoader(
-                val_dataset, batch_size=self.batch_size, shuffle=False, num_workers=2
-            )
-
-        # Prepare datasets
-        train_dataset = ClientPaymentDataset(X_train, y_train, self.history_length)
-        train_loader = DataLoader(
-            train_dataset, batch_size=self.batch_size, shuffle=True, num_workers=2
+        train_dataset = TensorDataset(
+            X_train_tensor[train_indices], y_train_tensor[train_indices]
+        )
+        val_dataset = TensorDataset(
+            X_train_tensor[val_indices], y_train_tensor[val_indices]
         )
 
-        # Initialize model
-        self.model = self._build_model(
-            num_clients=self.num_clients,
-            history_length=self.history_length,
+        train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+        val_loader = DataLoader(val_dataset, batch_size=batch_size)
+
+        # Build the model and move to device
+        self.model = ClientPaymentTransformer(
+            input_dim=X_train.shape[1],
             embed_dim=self.embed_dim,
             num_heads=self.num_heads,
             num_layers=self.num_layers,
@@ -1455,32 +1318,34 @@ class ClientPaymentPredictionModel(BaseModel):
         )
         self.model.to(self.device)
 
-        self.optimizer = optim.AdamW(
-            self.model.parameters(), lr=self.learning_rate, weight_decay=1e-5
+        # Define loss function and optimizer
+        criterion = nn.MSELoss()
+        self.optimizer =  optim.AdamW(
+            self.model.parameters(), lr=lr, weight_decay=1e-5
         )
 
-        # Learning rate scheduler for better convergence
-        self.scheduler = optim.lr_scheduler.ReduceLROnPlateau(
-            self.optimizer, mode="min", factor=0.5, patience=3
+        # Learning rate scheduler
+        scheduler = optim.lr_scheduler.ReduceLROnPlateau(
+            self.optimizer, mode="min", factor=0.5, patience=5
         )
 
         # Training loop
-        best_val_loss = float("inf")
         self.history = {"train_loss": [], "val_loss": []}
 
-        for epoch in range(self.epochs):
-            # Training phase
+        for epoch in range(epochs):
+            # Training
             self.model.train()
             train_loss = 0.0
-            with tqdm(train_loader, desc=f"Epoch {epoch + 1}/{self.epochs}") as pbar:
-                for batch in pbar:
-                    # Move batch to device
-                    batch = {k: v.to(self.device) for k, v in batch.items()}
+            with tqdm(train_loader, desc=f"Epoch {epoch + 1}/{epochs}") as pbar:
+                for inputs, targets in pbar:
+                    inputs, targets = inputs.to(self.device), targets.to(self.device)
+
+                    # Zero the parameter gradients
+                    self.optimizer.zero_grad()
 
                     # Forward pass
-                    self.optimizer.zero_grad()
-                    outputs = self.model(batch)
-                    loss = self.criterion(outputs, batch["target"])
+                    outputs = self.model(inputs)
+                    loss = criterion(outputs, targets.squeeze(-1))
 
                     # Backward pass and optimize
                     loss.backward()
@@ -1489,34 +1354,32 @@ class ClientPaymentPredictionModel(BaseModel):
                     )
                     self.optimizer.step()
 
-                    train_loss += loss.item()
+                    train_loss += loss.item() * inputs.size(0)
                     pbar.set_postfix({"loss": loss.item()})
 
-            train_loss /= len(train_loader)
-            self.history["train_loss"].append(train_loss)
+            train_loss = train_loss / len(train_loader.dataset)
 
-            # Validation phase
+            # Validation
+            self.model.eval()
             val_loss = 0.0
-            if val_loader:
-                self.model.eval()
-                with torch.no_grad():
-                    for batch in val_loader:
-                        batch = {k: v.to(self.device) for k, v in batch.items()}
-                        outputs = self.model(batch)
-                        loss = self.criterion(outputs, batch["target"])
-                        val_loss += loss.item()
+            with torch.no_grad():
+                for inputs, targets in val_loader:
+                    inputs, targets = inputs.to(self.device), targets.to(self.device)
+                    outputs = self.model(inputs)
+                    loss = criterion(outputs, targets.squeeze(-1))
+                    val_loss += loss.item() * inputs.size(0)
 
-                val_loss /= len(val_loader)
-                self.history["val_loss"].append(val_loss)
+                val_loss = val_loss / len(val_loader.dataset)
 
-                # Learning rate scheduler step
-                self.scheduler.step(val_loss)
+            # Update learning rate
+            scheduler.step(val_loss)
 
-                print(
-                    f"Epoch {epoch + 1}/{self.epochs}, Train Loss: {train_loss:.4f}, Val Loss: {val_loss:.4f}"
-                )
-            else:
-                print(f"Epoch {epoch + 1}/{self.epochs}, Train Loss: {train_loss:.4f}")
+            # Record history
+            self.history["train_loss"].append(train_loss)
+            self.history["val_loss"].append(val_loss)
+            print(
+                f"Epoch {epoch + 1}/{epochs} - Train Loss: {train_loss:.4f}, Val Loss: {val_loss:.4f}"
+            )
 
             # Early stopping
             stop, save_model = self._early_stopping(val_loss)
@@ -1530,91 +1393,42 @@ class ClientPaymentPredictionModel(BaseModel):
         if self.best_model_state is not None:
             self.model.load_state_dict(self.best_model_state)
 
-        self.plot_history()
-
         return self
 
     def predict(self, X):
-        """Predict using the trained model.
+        """Make predictions using the trained model."""
+        # Handle sparse matrix
+        if sp.issparse(X):
+            X = X.toarray()
+        
+        print(f"Predict called. Type: {type(X)}")
+        
+        # Sanity check for DataFrame dtype
+        if isinstance(X, pd.DataFrame):
+            print("DataFrame dtypes:")
+            print(X.dtypes)
+            if not all(np.issubdtype(dtype, np.number) for dtype in X.dtypes):
+                raise ValueError("Non-numeric data found in input DataFrame.")
 
-        Args:
-            X: Features for prediction
 
-        Returns:
-            Predicted days to payment
-        """
-        # Prepare dataset - we need to extract client history for each invoice
-        test_dataset = ClientPaymentDataset(
-            X, pd.Series([0] * len(X)), self.history_length
-        )
-        test_loader = DataLoader(
-            test_dataset, batch_size=self.batch_size, shuffle=False
-        )
-
-        # Make predictions
         self.model.eval()
-        predictions = []
+        # Check for NaNs or infs
+        if isinstance(X, pd.DataFrame):
+            X_tensor = torch.FloatTensor(X.values).to(self.device)
+        else:
+            X_tensor = torch.FloatTensor(X).to(self.device)
+
+        print(f"Tensor shape: {X_tensor.shape}")
+        print(f"Tensor device: {X_tensor.device}")
+        print(f"Model device: {next(self.model.parameters()).device}")
 
         with torch.no_grad():
-            for batch in test_loader:
-                batch = {k: v.to(self.device) for k, v in batch.items()}
-                outputs = self.model(batch)
-                predictions.extend(outputs.cpu().numpy())
+            predictions = self.model(X_tensor)
+        return predictions.cpu().numpy()
 
-        return np.array(predictions)
-
-    def save_model(self, path="client_payment_transformer.pth"):
-        """Save the trained model.
-
-        Args:
-            path: Path to save the model
-        """
-        torch.save(
-            {
-                "model_state_dict": self.model.state_dict(),
-                "optimizer_state_dict": self.optimizer.state_dict(),
-                "num_clients": self.num_clients,
-                "history_length": self.history_length,
-                "embed_dim": self.embed_dim,
-                "num_heads": self.num_heads,
-                "num_layers": self.num_layers,
-                "dropout": self.dropout,
-            },
-            path,
-        )
-
-    def load_model(self, path="client_payment_transformer.pth"):
-        """Load a trained model.
-
-        Args:
-            path: Path to the saved model
-        """
-        checkpoint = torch.load(path, map_location=self.device)
-
-        # Recreate model with saved parameters
-        self.num_clients = checkpoint["num_clients"]
-        self.history_length = checkpoint["history_length"]
-        self.embed_dim = checkpoint["embed_dim"]
-        self.num_heads = checkpoint["num_heads"]
-        self.num_layers = checkpoint["num_layers"]
-        self.dropout = checkpoint["dropout"]
-
-        # Initialize model architecture
-        self.model = ClientPaymentTransformer(
-            num_clients=self.num_clients,
-            history_length=self.history_length,
-            embed_dim=self.embed_dim,
-            num_heads=self.num_heads,
-            num_layers=self.num_layers,
-            dropout=self.dropout,
-        )
-
-        # Load state dictionaries
-        self.model.load_state_dict(checkpoint["model_state_dict"])
-        self.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
-
-        # Move model to device
-        self.model.to(self.device)
+    def save_model(self, path: str = "transformer_model.pt"):
+        """Save the model to disk."""
+        torch.save(self.model.state_dict(), path)
 
     def plot_history(self):
         """Plot training and validation loss history."""
@@ -1624,10 +1438,10 @@ class ClientPaymentPredictionModel(BaseModel):
         ax.set_xlabel("Epochs")
         ax.set_ylabel("Loss")
         fig.suptitle("Training and Validation Loss History")
+        fig.legend()
         plt.tight_layout()
-        plt.savefig("transformer_nn_history.png", bbox_inches="tight")
+        plt.savefig("transformer_history.png", bbox_inches="tight")
         plt.show()
-
 
 # --------------------------------
 # Analysis and Visualization
@@ -1822,15 +1636,6 @@ def main():
         SimpleNeuralNetwork(),
         ComplexNeuralNetwork(),
         ClientPaymentPredictionModel(
-            num_clients=data["client_encoded"].nunique(),
-            history_length=50,
-            embed_dim=64,
-            num_heads=4,
-            num_layers=2,
-            dropout=0.1,
-            batch_size=256,
-            learning_rate=1e-4,
-            epochs=1,
         ),
     ]
 
