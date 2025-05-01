@@ -4,6 +4,7 @@ import pandas as pd
 from datetime import datetime, timedelta
 from typing import List, Dict, Tuple
 from tqdm import tqdm
+import matplotlib.pyplot as plt
 
 # ------------------------
 # Configuration parameters
@@ -172,5 +173,17 @@ if __name__ == "__main__":
     print(dataset["payment_behavior"].value_counts(normalize=True))
     # Print distribution of payment delays
     print(dataset["days_to_payment"].describe())
+    
+
+    # Plot the distribution of days_to_payment
+    plt.figure(figsize=(10, 6))
+    plt.hist(dataset["days_to_payment"], bins=30, color='blue', alpha=0.7, edgecolor='black')
+    plt.title("Distribution of Days to Payment")
+    plt.xlabel("Days to Payment")
+    plt.ylabel("Frequency")
+    plt.grid(axis='y', linestyle='--', alpha=0.7)
+    plt.savefig("days_to_payment_distribution.png")
+    plt.close()
+    
     dataset.to_csv("toy_invoices_with_client_patterns.csv", index=False)
     future_dataset.to_csv("toy_invoices_future.csv", index=False)
