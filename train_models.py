@@ -53,12 +53,20 @@ sns.set_theme(style="whitegrid", context="talk")
 # Data Loading and Preprocessing
 # --------------------------------
 
+
 def parse_args():
     """Parse command-line arguments."""
-    parser = argparse.ArgumentParser(description="Train models for invoice payment prediction.")
-    parser.add_argument("--batch_size", type=int, default=256, help="Batch size for training.")
-    parser.add_argument("--epochs", type=int, default=10, help="Number of epochs for training.")
+    parser = argparse.ArgumentParser(
+        description="Train models for invoice payment prediction."
+    )
+    parser.add_argument(
+        "--batch_size", type=int, default=256, help="Batch size for training."
+    )
+    parser.add_argument(
+        "--epochs", type=int, default=10, help="Number of epochs for training."
+    )
     return parser.parse_args()
+
 
 class DataProcessor:
     def __init__(self, data_path: str):
@@ -102,25 +110,30 @@ class DataProcessor:
             self.data["client_encoded"] = (
                 self.data["client"].astype("category").cat.codes
             )
-            
-        self.data['last_3_avg_days'] = self.data.groupby('client_encoded')['days_to_payment'].transform(
-            lambda x: x.shift(1).rolling(3, min_periods=1).mean())
-        
+
+        self.data["last_3_avg_days"] = self.data.groupby("client_encoded")[
+            "days_to_payment"
+        ].transform(lambda x: x.shift(1).rolling(3, min_periods=1).mean())
+
         # Fill with client-specific average when available, commented out cb its so slow
-        for client in self.data['client_encoded'].unique():
-            client_mask = self.data['client_encoded'] == client
-            client_avg = self.data.loc[client_mask, 'last_3_avg_days'].mean()
+        for client in self.data["client_encoded"].unique():
+            client_mask = self.data["client_encoded"] == client
+            client_avg = self.data.loc[client_mask, "last_3_avg_days"].mean()
             if not np.isnan(client_avg):
-                self.data.loc[client_mask, 'last_3_avg_days'] = self.data.loc[client_mask, 'last_3_avg_days'].fillna(client_avg)
-                
-        #self.data = self.data.fillna(self.data.mean())  # Fill any remaining NaN values with mean
+                self.data.loc[client_mask, "last_3_avg_days"] = self.data.loc[
+                    client_mask, "last_3_avg_days"
+                ].fillna(client_avg)
+
+        # self.data = self.data.fillna(self.data.mean())  # Fill any remaining NaN values with mean
 
         return self.data
 
     def prepare_features(self) -> None:
         """Prepare features and targets for modeling."""
         # Features and target
-        X = self.data[["client_encoded", "due_month", "due_day", "due_weekday", "last_3_avg_days"]]
+        X = self.data[
+            ["client_encoded", "due_month", "due_day", "due_weekday", "last_3_avg_days"]
+        ]
         y = self.data["days_to_payment"]
 
         # Get unique clients
@@ -266,7 +279,7 @@ class ClientPaymentDataset(Dataset):
 class AsymmetricLoss(nn.Module):
     """
     Loss function that penalizes missed late payments more heavily.
-    
+
     Parameters:
     -----------
     late_penalty : float
@@ -278,84 +291,89 @@ class AsymmetricLoss(nn.Module):
     reduction : str
         Reduction method ('mean', 'sum', or 'none')
     """
-    def __init__(self, late_penalty=2.0, base_loss='huber', delta=1.0, reduction='mean'):
+
+    def __init__(
+        self, late_penalty=2.0, base_loss="huber", delta=1.0, reduction="mean"
+    ):
         super(AsymmetricLoss, self).__init__()
         self.late_penalty = late_penalty
         self.base_loss = base_loss.lower()
         self.delta = delta
         self.reduction = reduction
-        
+
         # Set up base loss function
-        if self.base_loss == 'mse':
-            self.base_criterion = nn.MSELoss(reduction='none')
-        elif self.base_loss == 'mae':
-            self.base_criterion = nn.L1Loss(reduction='none')
-        elif self.base_loss == 'huber':
-            self.base_criterion = nn.SmoothL1Loss(reduction='none', beta=delta)
+        if self.base_loss == "mse":
+            self.base_criterion = nn.MSELoss(reduction="none")
+        elif self.base_loss == "mae":
+            self.base_criterion = nn.L1Loss(reduction="none")
+        elif self.base_loss == "huber":
+            self.base_criterion = nn.SmoothL1Loss(reduction="none", beta=delta)
         else:
             raise ValueError(f"Unknown base_loss: {base_loss}")
-    
+
     def forward(self, input, target):
         # Calculate base loss (without reduction)
         base_loss = self.base_criterion(input, target)
-        
+
         # Create weights: more weight for underpredicting late payments
         weights = torch.ones_like(target)
-        
+
         # Where actual is late (>0) but prediction is not late (<=0)
         missed_late = (target > 0) & (input <= 0)
         weights[missed_late] = self.late_penalty
-        
+
         # Apply weights
         weighted_loss = weights * base_loss
-        
+
         # Apply reduction
-        if self.reduction == 'mean':
+        if self.reduction == "mean":
             return weighted_loss.mean()
-        elif self.reduction == 'sum':
+        elif self.reduction == "sum":
             return weighted_loss.sum()
         else:  # 'none'
             return weighted_loss
-        
-        
+
+
 class PaymentTimingLoss(nn.Module):
-    def __init__(self, late_penalty=2.0, early_penalty=1.5, base_loss='huber', reduction='mean'):
+    def __init__(
+        self, late_penalty=2.0, early_penalty=1.5, base_loss="huber", reduction="mean"
+    ):
         super(PaymentTimingLoss, self).__init__()
         self.late_penalty = late_penalty
         self.early_penalty = early_penalty
         self.base_loss = base_loss.lower()
         self.reduction = reduction
-        
+
         # Set up base loss function
-        if self.base_loss == 'mse':
-            self.base_criterion = nn.MSELoss(reduction='none')
-        elif self.base_loss == 'mae':
-            self.base_criterion = nn.L1Loss(reduction='none')
-        elif self.base_loss == 'huber':
-            self.base_criterion = nn.SmoothL1Loss(reduction='none')
-        
+        if self.base_loss == "mse":
+            self.base_criterion = nn.MSELoss(reduction="none")
+        elif self.base_loss == "mae":
+            self.base_criterion = nn.L1Loss(reduction="none")
+        elif self.base_loss == "huber":
+            self.base_criterion = nn.SmoothL1Loss(reduction="none")
+
     def forward(self, input, target):
         # Calculate base loss
         base_loss = self.base_criterion(input, target)
-        
+
         # Create weights based on prediction accuracy
         weights = torch.ones_like(target)
-        
+
         # Where actual is late (>0) but prediction is not late (<=0)
         missed_late = (target > 0) & (input <= 0)
         weights[missed_late] = self.late_penalty
-        
+
         # Where actual is early (<0) but prediction is not early (>=0)
         missed_early = (target < 0) & (input >= 0)
         weights[missed_early] = self.early_penalty
-        
+
         # Apply weights
         weighted_loss = weights * base_loss
-        
+
         # Apply reduction
-        if self.reduction == 'mean':
+        if self.reduction == "mean":
             return weighted_loss.mean()
-        elif self.reduction == 'sum':
+        elif self.reduction == "sum":
             return weighted_loss.sum()
         else:  # 'none'
             return weighted_loss
@@ -437,13 +455,17 @@ class BaseModel:
             y_test = y_test.values
         if isinstance(y_pred, pd.Series):
             y_pred = y_pred.values
-            
+
         # See if we have NaN
         if np.isnan(y_test).any():
-            print(f"Warning: {len(y_test[np.isnan(y_test)])} NaN values found in test data out of {len(y_test)}.")
+            print(
+                f"Warning: {len(y_test[np.isnan(y_test)])} NaN values found in test data out of {len(y_test)}."
+            )
             print(y_test)
         if np.isnan(y_pred).any():
-            print(f"Warning: {len(y_pred[np.isnan(y_pred)])} NaN values found in prediction data out of {len(y_pred)}.")
+            print(
+                f"Warning: {len(y_pred[np.isnan(y_pred)])} NaN values found in prediction data out of {len(y_pred)}."
+            )
             print(y_pred)
 
         mae = mean_absolute_error(y_test, y_pred)
@@ -1510,7 +1532,7 @@ class ClientPaymentPredictionModel(BaseModel):
         # Load best model if early stopping was triggered
         if self.best_model_state is not None:
             self.model.load_state_dict(self.best_model_state)
-            
+
         self.plot_history()
 
         return self
@@ -1623,7 +1645,7 @@ class ModelAnalyzer:
         plt.tight_layout()
         plt.savefig("model_performance_comparison.png")
         plt.close()
-        
+
     def categorize_behavior(self, pred_days):
         if pred_days < 0:
             return "early"
@@ -1662,7 +1684,9 @@ class ModelAnalyzer:
                 analysis_df[f"{model_name}_error"] = np.abs(
                     analysis_df["true_days"] - preds
                 )
-                analysis_df[f"{model_name}_pred_type"] = analysis_df[f"{model_name}_pred"].apply(self.categorize_behavior)
+                analysis_df[f"{model_name}_pred_type"] = analysis_df[
+                    f"{model_name}_pred"
+                ].apply(self.categorize_behavior)
 
             # Group by behavior profile and calculate mean error for each model
             behavior_results = []
@@ -1677,9 +1701,21 @@ class ModelAnalyzer:
                     result[f"{model_name}_mean_error"] = behavior_data[
                         f"{model_name}_error"
                     ].mean()
-                    result[f"{model_name}_pred_early"] = len(behavior_data[f"{model_name}_pred"][behavior_data[f"{model_name}_pred_type"] == "early"]) / len(behavior_data[f"{model_name}_pred"])
-                    result[f"{model_name}_pred_on_time"] = len(behavior_data[f"{model_name}_pred"][behavior_data[f"{model_name}_pred_type"] == "on_time"]) / len(behavior_data[f"{model_name}_pred"])
-                    result[f"{model_name}_pred_late"] = len(behavior_data[f"{model_name}_pred"][behavior_data[f"{model_name}_pred_type"] == "late"]) / len(behavior_data[f"{model_name}_pred"])
+                    result[f"{model_name}_pred_early"] = len(
+                        behavior_data[f"{model_name}_pred"][
+                            behavior_data[f"{model_name}_pred_type"] == "early"
+                        ]
+                    ) / len(behavior_data[f"{model_name}_pred"])
+                    result[f"{model_name}_pred_on_time"] = len(
+                        behavior_data[f"{model_name}_pred"][
+                            behavior_data[f"{model_name}_pred_type"] == "on_time"
+                        ]
+                    ) / len(behavior_data[f"{model_name}_pred"])
+                    result[f"{model_name}_pred_late"] = len(
+                        behavior_data[f"{model_name}_pred"][
+                            behavior_data[f"{model_name}_pred_type"] == "late"
+                        ]
+                    ) / len(behavior_data[f"{model_name}_pred"])
 
                 behavior_results.append(result)
 
@@ -1724,37 +1760,58 @@ class ModelAnalyzer:
         plt.tight_layout()
         plt.savefig("model_error_by_behavior.png")
         plt.close()
-        
+
         # Plot per model what it predicted per behavior
         # Reshape data for plotting proportions
         proportion_data = []
-        for model_name in [col.replace("_pred_early", "") for col in behavior_df.columns if "_pred_early" in col]:
+        for model_name in [
+            col.replace("_pred_early", "")
+            for col in behavior_df.columns
+            if "_pred_early" in col
+        ]:
             for behavior in behavior_df["behavior_profile"]:
-                proportion_data.append({
-                    "behavior_profile": behavior,
-                    "model": model_name,
-                    "predicted_behavior": "early",
-                    "proportion": behavior_df.loc[behavior_df["behavior_profile"] == behavior, f"{model_name}_pred_early"].values[0],
-                })
-                proportion_data.append({
-                    "behavior_profile": behavior,
-                    "model": model_name,
-                    "predicted_behavior": "on_time",
-                    "proportion": behavior_df.loc[behavior_df["behavior_profile"] == behavior, f"{model_name}_pred_on_time"].values[0],
-                })
-                proportion_data.append({
-                    "behavior_profile": behavior,
-                    "model": model_name,
-                    "predicted_behavior": "late",
-                    "proportion": behavior_df.loc[behavior_df["behavior_profile"] == behavior, f"{model_name}_pred_late"].values[0],
-                })
+                proportion_data.append(
+                    {
+                        "behavior_profile": behavior,
+                        "model": model_name,
+                        "predicted_behavior": "early",
+                        "proportion": behavior_df.loc[
+                            behavior_df["behavior_profile"] == behavior,
+                            f"{model_name}_pred_early",
+                        ].values[0],
+                    }
+                )
+                proportion_data.append(
+                    {
+                        "behavior_profile": behavior,
+                        "model": model_name,
+                        "predicted_behavior": "on_time",
+                        "proportion": behavior_df.loc[
+                            behavior_df["behavior_profile"] == behavior,
+                            f"{model_name}_pred_on_time",
+                        ].values[0],
+                    }
+                )
+                proportion_data.append(
+                    {
+                        "behavior_profile": behavior,
+                        "model": model_name,
+                        "predicted_behavior": "late",
+                        "proportion": behavior_df.loc[
+                            behavior_df["behavior_profile"] == behavior,
+                            f"{model_name}_pred_late",
+                        ].values[0],
+                    }
+                )
 
         proportion_df = pd.DataFrame(proportion_data)
 
         # Create a figure with subplots for each model
         unique_models = proportion_df["model"].unique()
         num_models = len(unique_models)
-        fig, axes = plt.subplots(num_models, 1, figsize=(14, 5 * num_models), sharex=True)
+        fig, axes = plt.subplots(
+            num_models, 1, figsize=(14, 5 * num_models), sharex=True
+        )
 
         if num_models == 1:
             axes = [axes]  # Ensure axes is iterable for a single subplot
@@ -1762,12 +1819,12 @@ class ModelAnalyzer:
         for ax, model_name in zip(axes, unique_models):
             model_data = proportion_df[proportion_df["model"] == model_name]
             sns.barplot(
-            x="behavior_profile",
-            y="proportion",
-            hue="predicted_behavior",
-            data=model_data,
-            ci=None,
-            ax=ax
+                x="behavior_profile",
+                y="proportion",
+                hue="predicted_behavior",
+                data=model_data,
+                ci=None,
+                ax=ax,
             )
             ax.set_title(f"Proportions of Predicted Behavior for {model_name}")
             ax.set_xlabel("Client Behavior Profile")
@@ -1778,6 +1835,7 @@ class ModelAnalyzer:
         plt.tight_layout()
         plt.savefig("predicted_behavior_proportions_by_model.png")
         plt.close()
+
 
 # --------------------------------
 # Main Execution
