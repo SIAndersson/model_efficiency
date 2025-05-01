@@ -1581,7 +1581,6 @@ class ClientPaymentPredictionModel(BaseModel):
         ax.set_xlabel("Epochs")
         ax.set_ylabel("Loss")
         fig.suptitle("Training and Validation Loss History")
-        fig.legend()
         plt.tight_layout()
         plt.savefig("transformer_history.png", bbox_inches="tight")
         plt.show()
