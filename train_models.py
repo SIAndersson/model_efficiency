@@ -263,6 +263,104 @@ class ClientPaymentDataset(Dataset):
 # --------------------------------
 
 
+class AsymmetricLoss(nn.Module):
+    """
+    Loss function that penalizes missed late payments more heavily.
+    
+    Parameters:
+    -----------
+    late_penalty : float
+        Factor by which to increase the penalty for underpredicting late payments
+    base_loss : str
+        The base loss to use ('mse', 'mae', or 'huber')
+    delta : float
+        Parameter for Huber loss (only used if base_loss='huber')
+    reduction : str
+        Reduction method ('mean', 'sum', or 'none')
+    """
+    def __init__(self, late_penalty=2.0, base_loss='huber', delta=1.0, reduction='mean'):
+        super(AsymmetricLoss, self).__init__()
+        self.late_penalty = late_penalty
+        self.base_loss = base_loss.lower()
+        self.delta = delta
+        self.reduction = reduction
+        
+        # Set up base loss function
+        if self.base_loss == 'mse':
+            self.base_criterion = nn.MSELoss(reduction='none')
+        elif self.base_loss == 'mae':
+            self.base_criterion = nn.L1Loss(reduction='none')
+        elif self.base_loss == 'huber':
+            self.base_criterion = nn.SmoothL1Loss(reduction='none', beta=delta)
+        else:
+            raise ValueError(f"Unknown base_loss: {base_loss}")
+    
+    def forward(self, input, target):
+        # Calculate base loss (without reduction)
+        base_loss = self.base_criterion(input, target)
+        
+        # Create weights: more weight for underpredicting late payments
+        weights = torch.ones_like(target)
+        
+        # Where actual is late (>0) but prediction is not late (<=0)
+        missed_late = (target > 0) & (input <= 0)
+        weights[missed_late] = self.late_penalty
+        
+        # Apply weights
+        weighted_loss = weights * base_loss
+        
+        # Apply reduction
+        if self.reduction == 'mean':
+            return weighted_loss.mean()
+        elif self.reduction == 'sum':
+            return weighted_loss.sum()
+        else:  # 'none'
+            return weighted_loss
+        
+        
+class PaymentTimingLoss(nn.Module):
+    def __init__(self, late_penalty=2.0, early_penalty=1.5, base_loss='huber', reduction='mean'):
+        super(PaymentTimingLoss, self).__init__()
+        self.late_penalty = late_penalty
+        self.early_penalty = early_penalty
+        self.base_loss = base_loss.lower()
+        self.reduction = reduction
+        
+        # Set up base loss function
+        if self.base_loss == 'mse':
+            self.base_criterion = nn.MSELoss(reduction='none')
+        elif self.base_loss == 'mae':
+            self.base_criterion = nn.L1Loss(reduction='none')
+        elif self.base_loss == 'huber':
+            self.base_criterion = nn.SmoothL1Loss(reduction='none')
+        
+    def forward(self, input, target):
+        # Calculate base loss
+        base_loss = self.base_criterion(input, target)
+        
+        # Create weights based on prediction accuracy
+        weights = torch.ones_like(target)
+        
+        # Where actual is late (>0) but prediction is not late (<=0)
+        missed_late = (target > 0) & (input <= 0)
+        weights[missed_late] = self.late_penalty
+        
+        # Where actual is early (<0) but prediction is not early (>=0)
+        missed_early = (target < 0) & (input >= 0)
+        weights[missed_early] = self.early_penalty
+        
+        # Apply weights
+        weighted_loss = weights * base_loss
+        
+        # Apply reduction
+        if self.reduction == 'mean':
+            return weighted_loss.mean()
+        elif self.reduction == 'sum':
+            return weighted_loss.sum()
+        else:  # 'none'
+            return weighted_loss
+
+
 class BaseModel:
     """Base class for all models."""
 
@@ -849,7 +947,7 @@ class SimpleNeuralNetwork(BaseModel):
         self.model.to(self.device)
 
         # Define loss function and optimizer
-        criterion = nn.HuberLoss()
+        criterion = AsymmetricLoss()
         optimizer = optim.AdamW(self.model.parameters(), lr=lr, weight_decay=1e-5)
 
         # Training loop
@@ -1094,7 +1192,7 @@ class ComplexNeuralNetwork(BaseModel):
         self.model.to(self.device)
 
         # Define loss function and optimizer
-        criterion = nn.HuberLoss()
+        criterion = AsymmetricLoss()
         optimizer = optim.AdamW(self.model.parameters(), lr=lr, weight_decay=1e-5)
 
         # Training loop
@@ -1341,7 +1439,7 @@ class ClientPaymentPredictionModel(BaseModel):
         self.model.to(self.device)
 
         # Define loss function and optimizer
-        criterion = nn.HuberLoss()
+        criterion = AsymmetricLoss()
         self.optimizer = optim.AdamW(self.model.parameters(), lr=lr, weight_decay=1e-5)
 
         # Learning rate scheduler
