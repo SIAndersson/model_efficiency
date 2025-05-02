@@ -347,6 +347,9 @@ class QuantileLoss(nn.Module):
     def forward(self, preds, target):
         
         errors = target - preds  # (batch_size, num_quantiles)
+        
+        if len(errors.shape) == 1:
+            errors = errors.unsqueeze(1)  # shape (batch_size, 1)
 
         loss = torch.max(
             self.quantiles.to(preds.device) * errors,
@@ -1053,7 +1056,7 @@ class ComplexNeuralNetworkModule(nn.Module):
         self.client_embedding = nn.Embedding(num_clients, embedding_dim)
 
         # Layer 1
-        self.layer1 = nn.Linear(input_dim + embedding_dim, 256)
+        self.layer1 = nn.Linear(input_dim + embedding_dim - 1, 256)
         self.bn1 = nn.BatchNorm1d(256)
         self.dropout1 = nn.Dropout(0.3)
 
