@@ -36,6 +36,7 @@ from torch.utils.data import DataLoader, Dataset, TensorDataset
 from tqdm import tqdm
 import argparse
 from xgboost import XGBRegressor
+import math
 
 # --------------------------------
 
@@ -49,6 +50,14 @@ if torch.backends.mps.is_available():
 
 # Set seaborn style for plots
 sns.set_theme(style="whitegrid", context="talk")
+
+CLIENT_BEHAVIOR_PROFILES = {
+    "always_early": {"early": 0.7, "on_time": 0.2, "late": 0.1},
+    "mostly_on_time": {"early": 0.1, "on_time": 0.8, "late": 0.1},
+    "often_late": {"early": 0.1, "on_time": 0.3, "late": 0.6},
+    "random_behavior": {"early": 0.3, "on_time": 0.4, "late": 0.3},
+}
+
 
 # --------------------------------
 # Data Loading and Preprocessing
@@ -1847,21 +1856,47 @@ class ModelAnalyzer:
         unique_models = proportion_df["model"].unique()
         num_models = len(unique_models)
         fig, axes = plt.subplots(
-            num_models, 1, figsize=(14, 5 * num_models), sharex=True
+            math.ceil((num_models + 1) / 2), 2, figsize=(14, 5 * (num_models + 1)), sharex=True
         )
 
-        if num_models == 1:
+        if num_models + 1 == 1:
             axes = [axes]  # Ensure axes is iterable for a single subplot
 
-        for ax, model_name in zip(axes, unique_models):
+        # Plot baseline proportions from CLIENT_BEHAVIOR_PROFILES
+        baseline_data = []
+        for behavior, proportions in CLIENT_BEHAVIOR_PROFILES.items():
+            for predicted_behavior, proportion in proportions.items():
+            baseline_data.append({
+                "behavior_profile": behavior,
+                "predicted_behavior": predicted_behavior,
+                "proportion": proportion,
+            })
+        baseline_df = pd.DataFrame(baseline_data)
+
+        sns.barplot(
+            x="behavior_profile",
+            y="proportion",
+            hue="predicted_behavior",
+            data=baseline_df,
+            ci=None,
+            ax=axes[0][0],
+        )
+        axes[0][0].set_title("Baseline Proportions of Predicted Behavior")
+        axes[0][0].set_xlabel("Client Behavior Profile")
+        axes[0][0].set_ylabel("Proportion")
+        axes[0][0].legend(title="Baseline Behavior")
+        axes[0][0].tick_params(axis="x", rotation=45)
+
+        # Plot proportions for each model
+        for ax, model_name in zip(axes.flat[1:], model_names):
             model_data = proportion_df[proportion_df["model"] == model_name]
             sns.barplot(
-                x="behavior_profile",
-                y="proportion",
-                hue="predicted_behavior",
-                data=model_data,
-                ci=None,
-                ax=ax,
+            x="behavior_profile",
+            y="proportion",
+            hue="predicted_behavior",
+            data=model_data,
+            ci=None,
+            ax=ax,
             )
             ax.set_title(f"Proportions of Predicted Behavior for {model_name}")
             ax.set_xlabel("Client Behavior Profile")
