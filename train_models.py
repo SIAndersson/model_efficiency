@@ -1664,7 +1664,6 @@ class ModelAnalyzer:
             "mae",
             "rmse",
             "training_time",
-            "memory_usage",
             "gpu_memory_usage",
         ],
     ):
@@ -1677,16 +1676,20 @@ class ModelAnalyzer:
         if performance is None:
             performance = self.compare_performance()
 
-        fig, axes = plt.subplots(len(metrics), 1, figsize=(10, 4 * len(metrics)))
+        fig, axes = plt.subplots(math.ceil(len(metrics) / 2), 2, figsize=(4 * len(metrics), 4 * len(metrics)))
 
-        if len(metrics) == 1:
-            axes = [axes]
+        # Flatten axes for easier indexing
+        axes = axes.flatten() if len(metrics) > 1 else [axes]
 
         for i, metric in enumerate(metrics):
             sns.barplot(x="model", y=metric, data=performance, ax=axes[i])
             axes[i].set_title(f"Comparison of {metric}")
             axes[i].set_ylabel(metric)
             axes[i].tick_params(axis="x", rotation=45)
+
+        # Hide any unused subplots
+        for j in range(i + 1, len(axes)):
+            axes[j].axis("off")
 
         plt.tight_layout()
         plt.savefig("model_performance_comparison.png")
