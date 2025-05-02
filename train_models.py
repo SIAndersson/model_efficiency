@@ -1866,11 +1866,11 @@ class ModelAnalyzer:
         baseline_data = []
         for behavior, proportions in CLIENT_BEHAVIOR_PROFILES.items():
             for predicted_behavior, proportion in proportions.items():
-            baseline_data.append({
-                "behavior_profile": behavior,
-                "predicted_behavior": predicted_behavior,
-                "proportion": proportion,
-            })
+                baseline_data.append({
+                    "behavior_profile": behavior,
+                    "predicted_behavior": predicted_behavior,
+                    "proportion": proportion,
+                })
         baseline_df = pd.DataFrame(baseline_data)
 
         sns.barplot(
