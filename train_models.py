@@ -35,6 +35,7 @@ from sklearn.model_selection import train_test_split
 from torch.utils.data import DataLoader, Dataset, TensorDataset
 from tqdm import tqdm
 import argparse
+from xgboost import XGBRegressor
 
 # --------------------------------
 
@@ -834,6 +835,41 @@ class StatisticalModel(BaseModel):
         return self.model.predict(X)
 
     def save_model(self, path: str = "statistical_model.joblib"):
+        """Save the model to disk."""
+        joblib.dump(self.model, path)
+
+
+class XGBoost(BaseModel):
+    """XGBoost regression model."""
+
+    def __init__(self):
+        """Initialize the XGBoost model."""
+        super().__init__(name="Statistical Model (XGBoost)")
+        self.model = XGBRegressor(objective="reg:squarederror", n_estimators=100, max_depth=6, learning_rate=0.1)
+
+    @BaseModel.track_resources
+    def train(self, X_train, y_train, epochs=None, batch_size=None):
+        """Train the XGBoost regression model."""
+        # Make sure training data doesn't contain NaN or infinity
+        if np.isnan(X_train.values).any() or np.isinf(X_train.values).any():
+            X_train = np.nan_to_num(X_train, nan=0.0, posinf=0.0, neginf=0.0)
+
+        if isinstance(y_train, pd.Series):
+            y_train_clean = y_train.replace([np.inf, -np.inf], np.nan).dropna()
+        else:
+            y_train_clean = np.nan_to_num(y_train, nan=0.0, posinf=0.0, neginf=0.0)
+
+        self.model.fit(X_train, y_train_clean)
+        return self
+
+    def predict(self, X):
+        """Make predictions using the trained model."""
+        # Ensure X doesn't contain NaN or infinity
+        if np.isnan(X.values).any() or np.isinf(X.values).any():
+            X = np.nan_to_num(X, nan=0.0, posinf=0.0, neginf=0.0)
+        return self.model.predict(X)
+
+    def save_model(self, path: str = "xgboost_model.joblib"):
         """Save the model to disk."""
         joblib.dump(self.model, path)
 
@@ -1871,6 +1907,7 @@ def main():
         StatisticalPaymentPredictor(prediction_method="mode"),
         StatisticalPaymentPredictor(prediction_method="weighted_mean"),
         StatisticalModel(),
+        XGBoost(),
         SimpleNeuralNetwork(),
         ComplexNeuralNetwork(),
         ClientPaymentPredictionModel(),
