@@ -1859,7 +1859,7 @@ class ModelAnalyzer:
         unique_models = proportion_df["model"].unique()
         num_models = len(unique_models)
         fig, axes = plt.subplots(
-            math.ceil((num_models + 1) / 2), 2, figsize=(14, 5 * (num_models + 1)), sharex=True
+            math.ceil((num_models + 1) / 2), 2, figsize=(25, 5 * (num_models + 1)), sharex=True
         )
 
         if num_models + 1 == 1:
