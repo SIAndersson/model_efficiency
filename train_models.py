@@ -1891,7 +1891,7 @@ class ModelAnalyzer:
         axes[0][0].tick_params(axis="x", rotation=45)
 
         # Plot proportions for each model
-        for ax, model_name in zip(axes.flat[1:], model_names):
+        for ax, model_name in zip(axes.flat[1:], unique_models):
             model_data = proportion_df[proportion_df["model"] == model_name]
             sns.barplot(
             x="behavior_profile",
