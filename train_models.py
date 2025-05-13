@@ -506,7 +506,7 @@ class StatisticalPaymentPredictor(BaseModel):
                 'confidence': Use the upper bound of the confidence interval
             confidence_level: Confidence level for interval predictions (0-1)
         """
-        super().__init__(name=f"StatisticalPaymentPredictor_{prediction_method}")
+        super().__init__(name=f"{prediction_method}")
         self.prediction_method = prediction_method
         self.confidence_level = confidence_level
         self.client_payment_history = defaultdict(list)
@@ -818,7 +818,7 @@ class StatisticalModel(BaseModel):
 
     def __init__(self):
         """Initialize the statistical model."""
-        super().__init__(name="Statistical Model (Linear Regression)")
+        super().__init__(name="Linear Regression")
         self.model = LinearRegression()
 
     @BaseModel.track_resources
@@ -853,7 +853,7 @@ class XGBoost(BaseModel):
 
     def __init__(self):
         """Initialize the XGBoost model."""
-        super().__init__(name="Statistical Model (XGBoost)")
+        super().__init__(name="XGBoost")
         self.model = XGBRegressor(objective="reg:squarederror", n_estimators=100, max_depth=6, learning_rate=0.1)
 
     @BaseModel.track_resources
@@ -1083,7 +1083,7 @@ class SimpleNeuralNetwork(BaseModel):
         ax.set_ylabel("Loss")
         fig.suptitle("Training and Validation Loss History")
         plt.tight_layout()
-        plt.savefig("simple_nn_history.png", bbox_inches="tight")
+        plt.savefig("simple_nn_history.png",dpi=300, bbox_inches="tight")
         plt.show()
 
 
@@ -1342,7 +1342,7 @@ class ComplexNeuralNetwork(BaseModel):
         ax.set_ylabel("Loss")
         fig.suptitle("Training and Validation Loss History")
         plt.tight_layout()
-        plt.savefig("complex_nn_history.png", bbox_inches="tight")
+        plt.savefig("complex_nn_history.png", dpi=300, bbox_inches="tight")
         plt.show()
 
 
@@ -1412,7 +1412,7 @@ class ClientPaymentPredictionModel(BaseModel):
             num_layers: Number of transformer layers
             dropout: Dropout rate
         """
-        super().__init__(name="ClientPaymentTransformer")
+        super().__init__(name="Transformer")
         self.embed_dim = embed_dim
         self.num_heads = num_heads
         self.num_layers = num_layers
@@ -1618,7 +1618,7 @@ class ClientPaymentPredictionModel(BaseModel):
         ax.set_ylabel("Loss")
         fig.suptitle("Training and Validation Loss History")
         plt.tight_layout()
-        plt.savefig("transformer_history.png", bbox_inches="tight")
+        plt.savefig("transformer_history.png", dpi=300, bbox_inches="tight")
         plt.show()
 
 
@@ -1692,7 +1692,7 @@ class ModelAnalyzer:
             axes[j].axis("off")
 
         plt.tight_layout()
-        plt.savefig("model_performance_comparison.png")
+        plt.savefig("model_performance_comparison.png", bbox_inches="tight", dpi=300)
         plt.close()
 
     def categorize_behavior(self, pred_days):
@@ -1805,9 +1805,9 @@ class ModelAnalyzer:
         plt.xlabel("Client Behavior Profile")
         plt.ylabel("Mean Absolute Error (days)")
         plt.xticks(rotation=45)
-        plt.legend(title="Model")
+        plt.legend(title="Model", bbox_to_anchor=(1.04, 1), loc="upper left")
         plt.tight_layout()
-        plt.savefig("model_error_by_behavior.png")
+        plt.savefig("model_error_by_behavior.png", bbox_inches="tight", dpi=300)
         plt.close()
 
         # Plot per model what it predicted per behavior
@@ -1908,7 +1908,7 @@ class ModelAnalyzer:
             ax.tick_params(axis="x", rotation=45)
 
         plt.tight_layout()
-        plt.savefig("predicted_behavior_proportions_by_model.png")
+        plt.savefig("predicted_behavior_proportions_by_model.png", bbox_inches="tight", dpi=300)
         plt.close()
 
 
