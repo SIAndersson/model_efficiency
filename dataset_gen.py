@@ -1,11 +1,12 @@
 import random
+from datetime import datetime, timedelta
+from typing import Dict, List, Tuple
+
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-from datetime import datetime, timedelta
-from typing import List, Dict, Tuple
-from tqdm import tqdm
 import seaborn as sns
-import matplotlib.pyplot as plt
+from tqdm import tqdm
 
 sns.set_theme(style="whitegrid", context="talk")
 
@@ -176,7 +177,6 @@ if __name__ == "__main__":
     print(dataset["payment_behavior"].value_counts(normalize=True))
     # Print distribution of payment delays
     print(dataset["days_to_payment"].describe())
-    
 
     # Plot the distribution of days_to_payment using seaborn
 
@@ -185,9 +185,9 @@ if __name__ == "__main__":
     plt.title("Distribution of Days to Payment")
     plt.xlabel("Days to Payment")
     plt.ylabel("Frequency")
-    plt.grid(axis='y', linestyle='--', alpha=0.7)
-    plt.savefig("days_to_payment_distribution.png")
+    plt.grid(axis="y", linestyle="--", alpha=0.7)
+    plt.savefig("days_to_payment_distribution.png", dpi=300, bbox_inches="tight")
     plt.close()
-    
+
     dataset.to_csv("toy_invoices_with_client_patterns.csv", index=False)
     future_dataset.to_csv("toy_invoices_future.csv", index=False)
