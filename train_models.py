@@ -912,7 +912,7 @@ class SimpleNeuralNetwork(BaseModel):
 
     def __init__(self):
         """Initialize the simple neural network."""
-        super().__init__(name="Simple Neural Network")
+        super().__init__(name="Simple NN")
         self.early_stop_patience = 10
         self.best_val_loss = float("inf")
         self.patience_counter = 0
@@ -1170,7 +1170,7 @@ class ComplexNeuralNetwork(BaseModel):
 
     def __init__(self):
         """Initialize the complex neural network."""
-        super().__init__(name="Complex Neural Network")
+        super().__init__(name="Complex NN")
         self.early_stop_patience = 15
         self.best_val_loss = float("inf")
         self.patience_counter = 0
@@ -1977,6 +1977,8 @@ def main():
     # Step 4: Analyze by behavior profile
     print("\nAnalyzing by behavior profile...")
     model_predictions = {model.name: model.predict(X_test_orig) for model in models}
+    print("Prediction dict:")
+    print(model_predictions)
     behavior_df = analyzer.analyze_predictions_by_behavior(
         X_test_orig, y_test, model_predictions
     )
