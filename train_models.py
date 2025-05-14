@@ -12,6 +12,8 @@ It evaluates each model's performance, resource usage, and analyzes how predicti
 correlate with client behavior profiles.
 """
 
+import argparse
+import math
 import os
 import pickle
 import time
@@ -34,9 +36,7 @@ from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from sklearn.model_selection import train_test_split
 from torch.utils.data import DataLoader, Dataset, TensorDataset
 from tqdm import tqdm
-import argparse
 from xgboost import XGBRegressor
-import math
 
 # --------------------------------
 
@@ -120,7 +120,7 @@ class DataProcessor:
             self.data["client_encoded"] = (
                 self.data["client"].astype("category").cat.codes
             )
-            
+
         # Sort data by client by date
         self.data = self.data.sort_values(by=["client_encoded", "due_date"])
 
@@ -334,7 +334,7 @@ class AsymmetricLoss(nn.Module):
         # Where actual is late (>0) but prediction is not late (<=0)
         missed_late = (target > 0) & (input <= 0)
         weights[missed_late] = self.late_penalty
-        
+
         weights = torch.nan_to_num(weights, nan=1.0)
 
         # Apply weights
@@ -355,19 +355,18 @@ class QuantileLoss(nn.Module):
         self.quantiles = torch.tensor(quantiles).view(1, -1)  # shape (1, num_quantiles)
 
     def forward(self, preds, target):
-        
         errors = target - preds  # (batch_size, num_quantiles)
-        
+
         if len(errors.shape) == 1:
             errors = errors.unsqueeze(1)  # shape (batch_size, 1)
 
         loss = torch.max(
             self.quantiles.to(preds.device) * errors,
-            (self.quantiles.to(preds.device) - 1) * errors
+            (self.quantiles.to(preds.device) - 1) * errors,
         )
         return loss.mean()
-    
-    
+
+
 class BaseModel:
     """Base class for all models."""
 
@@ -854,7 +853,12 @@ class XGBoost(BaseModel):
     def __init__(self):
         """Initialize the XGBoost model."""
         super().__init__(name="XGBoost")
-        self.model = XGBRegressor(objective="reg:squarederror", n_estimators=100, max_depth=6, learning_rate=0.1)
+        self.model = XGBRegressor(
+            objective="reg:squarederror",
+            n_estimators=100,
+            max_depth=6,
+            learning_rate=0.1,
+        )
 
     @BaseModel.track_resources
     def train(self, X_train, y_train, epochs=None, batch_size=None):
@@ -1083,7 +1087,7 @@ class SimpleNeuralNetwork(BaseModel):
         ax.set_ylabel("Loss")
         fig.suptitle("Training and Validation Loss History")
         plt.tight_layout()
-        plt.savefig("simple_nn_history.png",dpi=300, bbox_inches="tight")
+        plt.savefig("simple_nn_history.png", dpi=300, bbox_inches="tight")
         plt.show()
 
 
@@ -1133,10 +1137,14 @@ class ComplexNeuralNetworkModule(nn.Module):
         """
         client_ids = x[:, 0].long()  # Assuming client ID is the first column
         x = x[:, 1:]  # Exclude client ID from features
-        
-        embedded_clients = self.client_embedding(client_ids)  # (batch_size, embedding_dim)
-        x = torch.cat([x, embedded_clients], dim=1)  # (batch_size, input_dim + embedding_dim)
-        
+
+        embedded_clients = self.client_embedding(
+            client_ids
+        )  # (batch_size, embedding_dim)
+        x = torch.cat(
+            [x, embedded_clients], dim=1
+        )  # (batch_size, input_dim + embedding_dim)
+
         # Layer 1
         x = self.layer1(x)
         x = self.bn1(x)
@@ -1287,7 +1295,7 @@ class ComplexNeuralNetwork(BaseModel):
             with torch.no_grad():
                 for inputs, targets in val_loader:
                     inputs, targets = inputs.to(self.device), targets.to(self.device)
-                    
+
                     outputs = self.model(inputs)
                     loss = criterion(outputs, targets)
                     val_loss += loss.item() * inputs.size(0)
@@ -1356,11 +1364,14 @@ class ClientPaymentTransformer(nn.Module):
         num_heads=4,
         num_layers=2,
         dropout=0.1,
+        num_clients=5000,
     ):
         super(ClientPaymentTransformer, self).__init__()
+        # Embeddings
+        self.client_embedding = nn.Embedding(num_clients, embed_dim)
 
         # Feature processing
-        self.feature_projection = nn.Linear(input_dim, embed_dim)
+        self.feature_projection = nn.Linear(input_dim + embed_dim - 1, embed_dim)
 
         # Transformer encoder layers
         self.encoder_layer = nn.TransformerEncoderLayer(
@@ -1383,6 +1394,16 @@ class ClientPaymentTransformer(nn.Module):
         )
 
     def forward(self, x):
+        client_ids = x[:, 0].long()  # Assuming client ID is the first column
+        x = x[:, 1:]  # Exclude client ID from features
+
+        embedded_clients = self.client_embedding(
+            client_ids
+        )  # (batch_size, embedding_dim)
+        x = torch.cat(
+            [x, embedded_clients], dim=1
+        )  # (batch_size, input_dim + embedding_dim)
+
         # Project features to embedding dimension
         x = self.feature_projection(x)
 
@@ -1423,7 +1444,7 @@ class ClientPaymentPredictionModel(BaseModel):
         self.best_val_loss = float("inf")
         self.patience_counter = 0
         self.best_model_state = None
-        
+
     def init_weights(self, module):
         if isinstance(module, nn.Linear):
             nn.init.xavier_uniform_(module.weight)
@@ -1676,7 +1697,9 @@ class ModelAnalyzer:
         if performance is None:
             performance = self.compare_performance()
 
-        fig, axes = plt.subplots(math.ceil(len(metrics) / 2), 2, figsize=(4 * len(metrics), 4 * len(metrics)))
+        fig, axes = plt.subplots(
+            math.ceil(len(metrics) / 2), 2, figsize=(4 * len(metrics), 4 * len(metrics))
+        )
 
         # Flatten axes for easier indexing
         axes = axes.flatten() if len(metrics) > 1 else [axes]
@@ -1859,7 +1882,10 @@ class ModelAnalyzer:
         unique_models = proportion_df["model"].unique()
         num_models = len(unique_models)
         fig, axes = plt.subplots(
-            math.ceil((num_models + 1) / 2), 2, figsize=(25, 5 * (num_models + 1)), sharex=True
+            math.ceil((num_models + 1) / 2),
+            2,
+            figsize=(25, 5 * (num_models + 1)),
+            sharex=True,
         )
 
         if num_models + 1 == 1:
@@ -1869,11 +1895,13 @@ class ModelAnalyzer:
         baseline_data = []
         for behavior, proportions in CLIENT_BEHAVIOR_PROFILES.items():
             for predicted_behavior, proportion in proportions.items():
-                baseline_data.append({
-                    "behavior_profile": behavior,
-                    "predicted_behavior": predicted_behavior,
-                    "proportion": proportion,
-                })
+                baseline_data.append(
+                    {
+                        "behavior_profile": behavior,
+                        "predicted_behavior": predicted_behavior,
+                        "proportion": proportion,
+                    }
+                )
         baseline_df = pd.DataFrame(baseline_data)
 
         sns.barplot(
@@ -1894,12 +1922,12 @@ class ModelAnalyzer:
         for ax, model_name in zip(axes.flat[1:], unique_models):
             model_data = proportion_df[proportion_df["model"] == model_name]
             sns.barplot(
-            x="behavior_profile",
-            y="proportion",
-            hue="predicted_behavior",
-            data=model_data,
-            ci=None,
-            ax=ax,
+                x="behavior_profile",
+                y="proportion",
+                hue="predicted_behavior",
+                data=model_data,
+                ci=None,
+                ax=ax,
             )
             ax.set_title(f"Proportions of Predicted Behavior for {model_name}")
             ax.set_xlabel("Client Behavior Profile")
@@ -1908,7 +1936,9 @@ class ModelAnalyzer:
             ax.tick_params(axis="x", rotation=45)
 
         plt.tight_layout()
-        plt.savefig("predicted_behavior_proportions_by_model.png", bbox_inches="tight", dpi=300)
+        plt.savefig(
+            "predicted_behavior_proportions_by_model.png", bbox_inches="tight", dpi=300
+        )
         plt.close()
 
 
