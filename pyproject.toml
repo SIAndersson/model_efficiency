@@ -6,14 +6,21 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
   "gputil>=1.4.0",
+  "imageio>=2.37.0",
   "numpy>=2.2.5",
+  "optuna>=4.3.0",
   "pandas>=2.2.3",
+  "plotly>=6.1.0",
   "psutil>=7.0.0",
+  "pynvim>=0.5.2",
+  "requests>=2.32.3",
   "scikit-learn>=1.6.1",
   "seaborn>=0.13.2",
   "torch>=2.7.0",
   "tqdm>=4.67.1",
+  "umap-learn>=0.5.7",
   "xgboost>=3.0.0",
+  "xlrd>=2.0.1",
 ]
 
 [tool.uv.sources]

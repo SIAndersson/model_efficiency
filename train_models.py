@@ -1917,6 +1917,7 @@ class ModelAnalyzer:
         axes[0][0].set_ylabel("Proportion")
         axes[0][0].legend(title="Baseline Behavior")
         axes[0][0].tick_params(axis="x", rotation=45)
+        axes[0][0].set_ylim(ymin=0, ymax=1)
 
         # Plot proportions for each model
         for ax, model_name in zip(axes.flat[1:], unique_models):
@@ -1932,6 +1933,7 @@ class ModelAnalyzer:
             ax.set_title(f"Proportions of Predicted Behavior for {model_name}")
             ax.set_xlabel("Client Behavior Profile")
             ax.set_ylabel("Proportion")
+            ax.set_ylim(ymin=0, ymax=1)
             ax.legend(title="Predicted Behavior")
             ax.tick_params(axis="x", rotation=45)
 
